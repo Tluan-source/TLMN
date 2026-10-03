@@ -1,0 +1,17 @@
+node_modules/
+.next/
+dist/
+coverage/
+.env
+.env.*
+!.env.example
+!.env.*.example
+apps/*/.env
+apps/*/.env.*
+!apps/*/.env.example
+*.log
+.DS_Store
+.local-media/
+.local-postgres/
+.local-postgres.log
+.pg-init-password

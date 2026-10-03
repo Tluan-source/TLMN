@@ -1,0 +1,256 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum StoryStatus {
+  DRAFT
+  PUBLISHED
+}
+
+enum MediaKind {
+  AVATAR
+  STORY
+  CHAT_BACKGROUND
+}
+
+enum ReminderStatus {
+  PENDING
+  COMPLETED
+}
+
+enum Gender {
+  UNSPECIFIED
+  MALE
+  FEMALE
+  OTHER
+}
+
+model User {
+  id             String          @id @default(cuid())
+  email          String          @unique
+  passwordHash   String
+  displayName    String
+  bio            String?         @db.VarChar(200)
+  gender         Gender          @default(UNSPECIFIED)
+  chatNickname   String?         @db.VarChar(32)
+  chatIcon       String          @default("💗") @db.VarChar(16)
+  avatarMediaId  String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  sessions       Session[]
+  memberships    CoupleMember[]
+  invitations    Invitation[]    @relation("InvitationCreator")
+  stories        DailyStory[]
+  comments       Comment[]
+  media          Media[]
+  reactions      StoryEntryReaction[]
+  reminders      Reminder[]
+  anniversaries  Anniversary[]   @relation("AnniversaryCreator")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId, expiresAt])
+}
+
+model Couple {
+  id                    String          @id @default(cuid())
+  name                  String          @db.VarChar(80)
+  timezone              String          @default("Asia/Ho_Chi_Minh")
+  chatBackground        String          @default("#fff7fb") @db.VarChar(7)
+  chatBackgroundMediaId String?         @unique
+  chatBackgroundMedia   Media?          @relation("CoupleChatBackground", fields: [chatBackgroundMediaId], references: [id], onDelete: SetNull)
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+  members               CoupleMember[]
+  invitations           Invitation[]
+  stories               DailyStory[]
+  summaries             DailySummary[]
+  streakDays            StreakDay[]
+  aiUsage               AiUsage[]
+  reminders             Reminder[]
+  anniversaries         Anniversary[]
+}
+
+model CoupleMember {
+  id        String   @id @default(cuid())
+  coupleId  String
+  userId    String   @unique
+  slot      Int
+  joinedAt  DateTime @default(now())
+  couple    Couple   @relation(fields: [coupleId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([coupleId, slot])
+  @@index([coupleId])
+}
+
+model Invitation {
+  id          String   @id @default(cuid())
+  coupleId    String
+  creatorId   String
+  tokenHash   String   @unique
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+  revokedAt   DateTime?
+  createdAt   DateTime @default(now())
+  couple      Couple   @relation(fields: [coupleId], references: [id], onDelete: Cascade)
+  creator     User     @relation("InvitationCreator", fields: [creatorId], references: [id], onDelete: Cascade)
+
+  @@index([coupleId, expiresAt])
+}
+
+model DailyStory {
+  id        String       @id @default(cuid())
+  coupleId  String
+  authorId  String
+  date      DateTime     @db.Date
+  status    StoryStatus  @default(PUBLISHED)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  couple    Couple       @relation(fields: [coupleId], references: [id], onDelete: Cascade)
+  author    User         @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  entries   StoryEntry[]
+  comments  Comment[]
+
+  @@unique([coupleId, authorId, date])
+  @@index([coupleId, date, status])
+}
+
+model StoryEntry {
+  id        String   @id @default(cuid())
+  storyId   String
+  content   String   @db.VarChar(10000)
+  createdAt DateTime @default(now())
+  story     DailyStory @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  media     Media[]
+  reactions StoryEntryReaction[]
+
+  @@index([storyId, createdAt])
+}
+
+model StoryEntryReaction {
+  id        String     @id @default(cuid())
+  entryId   String
+  userId    String
+  emoji     String     @db.VarChar(16)
+  createdAt DateTime   @default(now())
+  entry     StoryEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([entryId, userId])
+  @@index([entryId])
+}
+
+model Media {
+  id          String    @id @default(cuid())
+  kind        MediaKind
+  ownerId     String
+  storyEntryId String?
+  storagePath String    @unique
+  mimeType    String
+  byteSize    Int
+  createdAt   DateTime  @default(now())
+  owner       User      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  storyEntry  StoryEntry? @relation(fields: [storyEntryId], references: [id], onDelete: Cascade)
+  backgroundForCouple Couple? @relation("CoupleChatBackground")
+
+  @@index([ownerId, kind])
+  @@index([storyEntryId])
+}
+
+model Comment {
+  id        String    @id @default(cuid())
+  storyId   String
+  authorId  String
+  parentId  String?
+  content   String    @db.VarChar(2000)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  story     DailyStory @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  author    User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  parent    Comment?  @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies   Comment[] @relation("CommentReplies")
+
+  @@index([storyId, createdAt])
+  @@index([parentId, createdAt])
+}
+
+model DailySummary {
+  id         String   @id @default(cuid())
+  coupleId   String
+  date       DateTime @db.Date
+  sourceHash String
+  content    String   @db.VarChar(10000)
+  model      String
+  promptVersion Int   @default(1)
+  updatedAt  DateTime @updatedAt
+  couple     Couple   @relation(fields: [coupleId], references: [id], onDelete: Cascade)
+
+  @@unique([coupleId, date])
+}
+
+model StreakDay {
+  id          String   @id @default(cuid())
+  coupleId    String
+  date        DateTime @db.Date
+  completedAt DateTime @default(now())
+  couple      Couple   @relation(fields: [coupleId], references: [id], onDelete: Cascade)
+
+  @@unique([coupleId, date])
+  @@index([coupleId, date])
+}
+
+model AiUsage {
+  id       String   @id @default(cuid())
+  coupleId String
+  date     DateTime @db.Date
+  count    Int      @default(0)
+  couple   Couple   @relation(fields: [coupleId], references: [id], onDelete: Cascade)
+
+  @@unique([coupleId, date])
+}
+
+model Reminder {
+  id          String         @id @default(cuid())
+  coupleId    String
+  creatorId   String
+  title       String         @db.VarChar(160)
+  scheduledAt DateTime
+  notifiedAt  DateTime?
+  status      ReminderStatus @default(PENDING)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  couple      Couple         @relation(fields: [coupleId], references: [id], onDelete: Cascade)
+  creator     User           @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+
+  @@index([status, scheduledAt])
+  @@index([coupleId, status, scheduledAt])
+}
+
+model Anniversary {
+  id        String   @id @default(cuid())
+  coupleId  String
+  creatorId String
+  title     String   @db.VarChar(120)
+  date      DateTime @db.Date
+  note      String?  @db.VarChar(500)
+  annual    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  couple    Couple  @relation(fields: [coupleId], references: [id], onDelete: Cascade)
+  creator   User     @relation("AnniversaryCreator", fields: [creatorId], references: [id], onDelete: Cascade)
+
+  @@index([coupleId, date])
+}

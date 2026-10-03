@@ -1,0 +1,23 @@
+{
+  "name": "chuyen-cuoi-ngay",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": ["apps/web", "apps/api", "packages/contracts"],
+  "scripts": {
+    "dev": "concurrently -k -n api,web -c magenta,cyan \"npm run dev:api\" \"npm run dev:web\"",
+    "dev:api": "npm run start:dev -w @chuyen/api",
+    "dev:web": "npm run dev -w @chuyen/web",
+    "build": "npm run build -w @chuyen/api && npm run build -w @chuyen/web",
+    "db:generate": "npm run db:generate -w @chuyen/api",
+    "db:migrate": "npm run db:migrate -w @chuyen/api",
+    "db:seed:demo": "npm run db:seed:demo -w @chuyen/api",
+    "db:studio": "npm run db:studio -w @chuyen/api"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "typescript": "^5.8.3"
+  },
+  "overrides": {
+    "postcss": "^8.5.28"
+  }
+}

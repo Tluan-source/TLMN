@@ -1,0 +1,40 @@
+{
+  "name": "@chuyen/api",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start:dev": "node start-with-system-ca.cjs dev",
+    "build": "nest build",
+    "start:prod": "node start-with-system-ca.cjs prod",
+    "db:seed:demo": "node prisma/seed-demo.cjs",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:studio": "prisma studio"
+  },
+  "dependencies": {
+    "@chuyen/contracts": "1.0.0",
+    "@nestjs/common": "^11.1.6",
+    "@nestjs/config": "^4.0.2",
+    "@nestjs/core": "^11.1.6",
+    "@nestjs/platform-express": "^11.1.6",
+    "@nestjs/platform-socket.io": "^11.2.7",
+    "@nestjs/websockets": "^11.2.7",
+    "@prisma/client": "6.12.0",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.14.2",
+    "cookie-parser": "^1.4.7",
+    "dotenv": "^16.6.1",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "socket.io": "^4.8.4"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^11.0.10",
+    "@types/cookie-parser": "^1.4.9",
+    "@types/express": "^5.0.3",
+    "@types/multer": "^2.0.0",
+    "prisma": "6.12.0",
+    "ts-node": "^10.9.2",
+    "tsconfig-paths": "^4.2.0"
+  }
+}

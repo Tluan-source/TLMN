@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: chuyen-cuoi-ngay-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: journal
+      POSTGRES_PASSWORD: journal_local_only
+      POSTGRES_DB: journal
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - journal-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U journal -d journal"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+
+volumes:
+  journal-data:
