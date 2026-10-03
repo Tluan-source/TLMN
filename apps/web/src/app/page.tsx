@@ -23,6 +23,25 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
   return payload as T;
 }
 
+// Phone camera photos are often 3–10 MB; shrink them before upload so sending stays fast on mobile data.
+async function shrinkImage(file: File, maxSide = 2048, quality = 0.85): Promise<File> {
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size <= 1024 * 1024) return file;
+  try {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(bitmap.width * scale);
+    canvas.height = Math.round(bitmap.height * scale);
+    canvas.getContext('2d')?.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    bitmap.close();
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', quality));
+    if (!blob || blob.size >= file.size) return file;
+    return new File([blob], file.name.replace(/\.\w+$/, '') + '.jpg', { type: 'image/jpeg' });
+  } catch {
+    return file;
+  }
+}
+
 function todayInVietnam() {
   const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
   return parts;
@@ -559,8 +578,8 @@ export default function Home() {
     form.set('content', content);
     const submitter = (event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
     form.set('status', submitter?.value === 'DRAFT' ? 'DRAFT' : 'PUBLISHED');
-    selectedFiles.forEach((file) => form.append('files', file));
     try {
+      for (const file of selectedFiles) form.append('files', await shrinkImage(file));
       await api('/stories', { method: 'POST', body: form });
       setContent('');
       setSelectedFiles([]);
@@ -916,7 +935,7 @@ function ChatSettingsDialog({ account, workspace, notify, onAccount, onWorkspace
 
       if (selectedFile) {
         const form = new FormData();
-        form.set('file', selectedFile);
+        form.set('file', await shrinkImage(selectedFile));
         await api('/media/chat-background', { method: 'POST', body: form });
       } else if (clearExistingImage) {
         await api('/media/chat-background', { method: 'DELETE' });
@@ -1155,9 +1174,9 @@ function ProfilePage({ account, workspace, partner, busy, inviteUrl, reminderRev
     const file = event.target.files?.[0];
     if (!file) return;
     const form = new FormData();
-    form.set('file', file);
     setUploadBusy(true);
     try {
+      form.set('file', await shrinkImage(file, 1024));
       const updated = await api<Account>('/users/me/avatar', { method: 'POST', body: form });
       onAccount(updated);
       notify('Ảnh đại diện đã được thay đổi.');

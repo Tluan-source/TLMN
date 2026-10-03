@@ -59,7 +59,10 @@ export class MediaService {
         headers: { Authorization: `Bearer ${key}`, apikey: key, 'Content-Type': mimeType, 'x-upsert': 'false' },
         body: new Blob([new Uint8Array(data)], { type: mimeType }),
       });
-      if (!response.ok) throw new ServiceUnavailableException('Không tải được tệp lên kho lưu trữ.');
+      if (!response.ok) {
+        console.error(`Supabase storage upload failed (${response.status}): ${(await response.text()).slice(0, 300)}`);
+        throw new ServiceUnavailableException('Không tải được tệp lên kho lưu trữ.');
+      }
       return;
     }
     const fullPath = this.localPath(path);
