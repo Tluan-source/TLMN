@@ -699,3 +699,4 @@ button, label, a { -webkit-tap-highlight-color: transparent; }
   .reaction-trigger { width: 28px; height: 24px; }
   .reaction-pill { min-height: 24px; }
 }
+.message-time-below { margin-top: -4px; padding-inline: 6px; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }

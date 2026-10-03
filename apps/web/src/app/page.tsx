@@ -673,7 +673,7 @@ export default function Home() {
           </header>
           <div className="chat-panel-body">
             <div ref={chatSurfaceRef} className="chat-surface" style={{ backgroundColor: workspace.chatBackground || '#fff7fb', backgroundImage: workspace.chatBackgroundImageUrl ? `linear-gradient(rgba(255,255,255,.78), rgba(255,255,255,.78)), url("${workspace.chatBackgroundImageUrl}")` : undefined }}>
-              {!dayReady ? <ChatSkeleton /> : chatSearch.trim() && visibleTimeline.length === 0 ? <section className="empty-state chat-empty-state"><Search size={23} /><h3>Không tìm thấy tin nhắn</h3><p>Thử một từ khóa khác trong ngày này nhé.</p></section> : visibleTimeline.length === 0 ? <section className="empty-state chat-empty-state"><Heart size={23} /><h3>Ngày mới, câu chuyện mới</h3><p>{partner ? 'Kể một điều nho nhỏ trong ngày, người ấy sẽ tìm thấy ở đây.' : 'Mời người ấy vào workspace để hai bạn bắt đầu cùng nhau.'}</p></section> : <section className="chat-thread" aria-label="Cuộc trò chuyện trong ngày">{visibleTimeline.map(({ story, entry }, index) => { const previous = visibleTimeline[index - 1]; const continued = previous?.story.author.id === story.author.id; return <StoryCard key={entry.id} story={story} entry={entry} continued={continued} showGapTime={continued && new Date(entry.createdAt).getTime() - new Date(previous.entry.createdAt).getTime() > 30 * 60 * 1000} isLastEntry={entry.id === story.entries.at(-1)?.id} accountId={account.id} busy={busy} replyTarget={replyTarget} replyContent={replyContent} setReplyTarget={setReplyTarget} setReplyContent={setReplyContent} onReply={postReply} onReaction={(emoji) => postReaction(story.id, entry.id, emoji)} onRefresh={() => loadDay(day)} notify={notify} onViewPhoto={setViewedPhoto} />; })}</section>}
+              {!dayReady ? <ChatSkeleton /> : chatSearch.trim() && visibleTimeline.length === 0 ? <section className="empty-state chat-empty-state"><Search size={23} /><h3>Không tìm thấy tin nhắn</h3><p>Thử một từ khóa khác trong ngày này nhé.</p></section> : visibleTimeline.length === 0 ? <section className="empty-state chat-empty-state"><Heart size={23} /><h3>Ngày mới, câu chuyện mới</h3><p>{partner ? 'Kể một điều nho nhỏ trong ngày, người ấy sẽ tìm thấy ở đây.' : 'Mời người ấy vào workspace để hai bạn bắt đầu cùng nhau.'}</p></section> : <section className="chat-thread" aria-label="Cuộc trò chuyện trong ngày">{visibleTimeline.map(({ story, entry }, index) => { const previous = visibleTimeline[index - 1]; const continued = previous?.story.author.id === story.author.id; return <StoryCard key={entry.id} story={story} entry={entry} continued={continued} isLastEntry={entry.id === story.entries.at(-1)?.id} accountId={account.id} busy={busy} replyTarget={replyTarget} replyContent={replyContent} setReplyTarget={setReplyTarget} setReplyContent={setReplyContent} onReply={postReply} onReaction={(emoji) => postReaction(story.id, entry.id, emoji)} onRefresh={() => loadDay(day)} notify={notify} onViewPhoto={setViewedPhoto} />; })}</section>}
             </div>
             <button className="summary-chat-fab" type="button" onClick={() => setSummaryOpen(true)} aria-haspopup="dialog" aria-label="Mở tóm tắt AI cho ngày này" title="Tóm tắt AI">
               <Sparkles size={16} /><span>Tóm tắt AI</span>{summary?.summary && <span className="summary-ready-dot" aria-label="Đã có tóm tắt" />}
@@ -1008,8 +1008,8 @@ function PhotoPreview({ file, onRemove, onUseSuggestion }: { file: File; onRemov
   </div>;
 }
 
-function StoryCard({ story, entry, continued, showGapTime, isLastEntry, accountId, busy, replyTarget, replyContent, setReplyTarget, setReplyContent, onRefresh, notify, onReply, onReaction, onViewPhoto }: {
-  story: DailyStory; entry: DailyStory['entries'][number]; continued: boolean; showGapTime: boolean; isLastEntry: boolean; accountId: string; busy: boolean; replyTarget: string | null; replyContent: string;
+function StoryCard({ story, entry, continued, isLastEntry, accountId, busy, replyTarget, replyContent, setReplyTarget, setReplyContent, onRefresh, notify, onReply, onReaction, onViewPhoto }: {
+  story: DailyStory; entry: DailyStory['entries'][number]; continued: boolean; isLastEntry: boolean; accountId: string; busy: boolean; replyTarget: string | null; replyContent: string;
   setReplyTarget: (value: string | null) => void; setReplyContent: (value: string) => void;
   onRefresh: () => Promise<void>; notify: (message: string) => void; onReaction: (emoji: string) => Promise<void>;
   onReply: (event: FormEvent<HTMLFormElement>, storyId: string, parentId?: string) => void;
@@ -1031,11 +1031,11 @@ function StoryCard({ story, entry, continued, showGapTime, isLastEntry, accountI
   };
   const time = new Intl.DateTimeFormat('vi-VN', { hour: '2-digit', minute: '2-digit' }).format(new Date(entry.createdAt));
   const actions = <>{story.status === 'DRAFT' && isLastEntry && <span className="draft-label">Nháp</span>}{isOwner && isLastEntry && <button className="text-action delete-story" type="button" onClick={() => void removeStory()}>Xóa chuyện</button>}</>;
-  // Consecutive messages from the same person skip the avatar/name, like Messenger; a long gap still shows the time.
+  // Consecutive messages from the same person skip the avatar/name, like Messenger; the time sits under each bubble.
   return <article className={`chat-message ${isOwner ? 'mine' : 'theirs'} ${continued ? 'continued' : ''}`}>
     {continued
-      ? (showGapTime || (isLastEntry && (isOwner || story.status === 'DRAFT'))) && <header className="message-meta compact">{showGapTime && <time>{time}</time>}{actions}</header>
-      : <header className="message-meta"><Avatar user={story.author} /><span className="chat-user-icon" aria-hidden="true">{story.author.chatIcon || '💗'}</span><div className="message-author"><strong>{chatLabel(story.author)}</strong><time>{time}</time></div>{actions}</header>}
+      ? isLastEntry && (isOwner || story.status === 'DRAFT') && <header className="message-meta compact">{actions}</header>
+      : <header className="message-meta"><Avatar user={story.author} /><span className="chat-user-icon" aria-hidden="true">{story.author.chatIcon || '💗'}</span><div className="message-author"><strong>{chatLabel(story.author)}</strong></div>{actions}</header>}
     <div className={`message-group ${isOwner ? 'outgoing' : 'incoming'}`}>
       <div className={`message-entry ${isOwner ? 'outgoing' : 'incoming'}`}>
         {entry.media.length > 0 && <div className={`photo-grid ${entry.media.length === 1 ? 'single-photo' : 'multiple-photos'}`}>{entry.media.map((photo, index) => photo.mimeType.startsWith('video/') ? <div className="video-open" key={photo.id}><video src={photo.url} controls playsInline preload="metadata" aria-label={`Video ${index + 1} trong câu chuyện`} /></div> : <button className="photo-open" type="button" key={photo.id} title="Mở ảnh lớn" aria-label={`Mở ảnh ${index + 1}`} onClick={() => onViewPhoto({ url: photo.url, alt: `Ảnh ${index + 1} trong câu chuyện` })}><img src={photo.url} alt={`Ảnh ${index + 1} trong câu chuyện`} loading="lazy" /></button>)}</div>}
@@ -1043,6 +1043,7 @@ function StoryCard({ story, entry, continued, showGapTime, isLastEntry, accountI
       </div>
     </div>
     {story.status === 'PUBLISHED' && <MessageReactions reactions={entry.reactions || []} onReact={onReaction} />}
+    <time className="message-time-below" dateTime={entry.createdAt}>{time}</time>
     {isOwner && isLastEntry && story.status === 'DRAFT' && <button className="button button-primary draft-publish" type="button" disabled={saving} onClick={() => void publishDraft()}>{saving ? 'Đang chia sẻ…' : 'Chia sẻ với người ấy'}</button>}
     {isLastEntry && story.status === 'PUBLISHED' && <div className={`comments ${commentsOpen ? 'comments-open' : ''}`}>
       <button className="comment-toggle" type="button" aria-expanded={commentsOpen} onClick={() => setCommentsOpen((open) => !open)}><MessageCircle size={15} />{commentsOpen ? 'Ẩn lời nhắn' : story.comments.length ? `${story.comments.length} lời nhắn` : 'Gửi lời nhắn'}<ChevronRight className={commentsOpen ? 'toggle-chevron expanded' : 'toggle-chevron'} size={15} /></button>
