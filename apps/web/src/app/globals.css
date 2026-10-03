@@ -700,3 +700,15 @@ button, label, a { -webkit-tap-highlight-color: transparent; }
   .reaction-pill { min-height: 24px; }
 }
 .message-time-below { margin-top: -4px; padding-inline: 6px; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+
+/* Compact composer with 12px text (the viewport's maximum-scale keeps iOS from zooming into it). */
+.chat-composer, .chat-composer .composer-input { font-size: 12px; }
+.composer-icon { width: 34px; height: 34px; flex-basis: 34px; }
+.composer-icon svg { width: 16px; height: 16px; }
+.composer-input { min-height: 34px; padding: 7px 12px; border-radius: 17px; line-height: 1.4; }
+@media (max-width: 560px) {
+  .chat-composer { padding: 5px 6px; }
+  .composer-icon { width: 34px; height: 34px; flex-basis: 34px; }
+  .composer-input { min-height: 34px; padding: 7px 11px; font-size: 12px; }
+}
+@media (pointer: coarse) { .chat-composer .composer-input { font-size: 12px; } }

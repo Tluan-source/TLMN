@@ -7,10 +7,12 @@ export const metadata: Metadata = {
 };
 
 // viewport-fit=cover lets env(safe-area-inset-*) report the notch / home bar on phones;
-// resizes-content keeps the chat composer above the on-screen keyboard on Android.
+// resizes-content keeps the chat composer above the on-screen keyboard on Android;
+// maximum-scale stops iOS auto-zooming into the 12px chat input.
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
+  maximumScale: 1,
   viewportFit: 'cover',
   interactiveWidget: 'resizes-content',
   themeColor: '#fff7fa',
