@@ -1,6 +1,6 @@
 'use client';
 
-import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ChangeEvent, FormEvent, RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
 import {
   Bell, Bookmark, CalendarDays, Camera, Check, ChevronLeft, ChevronRight, Heart, House, LockKeyhole,
@@ -60,6 +60,59 @@ function chatLabel(user: UserProfile) {
   return user.chatNickname?.trim() || user.displayName;
 }
 
+const MODAL_EXIT_MS = 180;
+const FOCUSABLE = 'button:not(:disabled), [href], input:not(:disabled):not([type="hidden"]), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])';
+
+function prefersReducedMotion() {
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+/**
+ * Shared modal behaviour: locks page scroll, moves focus inside and keeps Tab there,
+ * closes on Escape, gives focus back on close, and lets the exit animation finish first.
+ */
+function useModal(onClose: () => void): { panelRef: RefObject<HTMLElement | null>; closing: boolean; close: () => void } {
+  const panelRef = useRef<HTMLElement | null>(null);
+  const [closing, setClosing] = useState(false);
+  const closingRef = useRef(false);
+  const onCloseRef = useRef(onClose);
+  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
+
+  const close = useCallback(() => {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    if (prefersReducedMotion()) { onCloseRef.current(); return; }
+    setClosing(true);
+    window.setTimeout(() => onCloseRef.current(), MODAL_EXIT_MS);
+  }, []);
+
+  useEffect(() => {
+    const panel = panelRef.current;
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    panel?.focus({ preventScroll: true });
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') { event.preventDefault(); close(); return; }
+      if (event.key !== 'Tab' || !panel) return;
+      const focusable = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE)).filter((element) => element.getClientRects().length > 0);
+      if (focusable.length === 0) { event.preventDefault(); return; }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && (document.activeElement === first || document.activeElement === panel)) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', onKeyDown);
+      previousFocus?.focus({ preventScroll: true });
+    };
+  }, [close]);
+
+  return { panelRef, closing, close };
+}
+
 function StreakHeart({ progress }: { progress: number }) {
   const heartPath = 'M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z';
   // The pointed tip hides very small fills behind the outline at icon size.
@@ -114,7 +167,10 @@ export default function Home() {
   const [chatSearchOpen, setChatSearchOpen] = useState(false);
   const [chatSearch, setChatSearch] = useState('');
   const [reminderRevision, setReminderRevision] = useState(0);
+  const [loadedDay, setLoadedDay] = useState<string | null>(null);
   const chatSurfaceRef = useRef<HTMLDivElement>(null);
+  const composerInputRef = useRef<HTMLTextAreaElement>(null);
+  const scrolledTimelineRef = useRef<{ key: string; count: number }>({ key: '', count: 0 });
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordingStreamRef = useRef<MediaStream | null>(null);
   const recordingPreviewRef = useRef<HTMLVideoElement>(null);
@@ -125,9 +181,12 @@ export default function Home() {
   const pageRef = useRef(page);
   const calendarYearRef = useRef(calendarYear);
 
+  const toastTimeoutRef = useRef<number | null>(null);
   const notify = useCallback((message: string) => {
+    // A newer toast restarts the clock; otherwise the older timer would cut it short.
+    if (toastTimeoutRef.current !== null) window.clearTimeout(toastTimeoutRef.current);
     setToast(message);
-    window.setTimeout(() => setToast(''), 3800);
+    toastTimeoutRef.current = window.setTimeout(() => { setToast(''); toastTimeoutRef.current = null; }, 3800);
   }, []);
   const closePhoto = useCallback(() => setViewedPhoto(null), []);
 
@@ -145,11 +204,15 @@ export default function Home() {
         api<StreakStatus>('/streaks/me'),
         api<SummaryState>(`/couples/me/days/${date}/summary`),
       ]);
+      // A slower response for a day the user already left must not overwrite the current one.
+      if (date !== dayRef.current) return;
       setStories(dailyStories);
       setStreak(dailyStreak);
       setSummary(dailySummary);
     } catch (error) {
       notify(error instanceof Error ? error.message : 'Chưa tải được câu chuyện.');
+    } finally {
+      if (date === dayRef.current) setLoadedDay(date);
     }
   }, [notify, workspace]);
 
@@ -254,17 +317,43 @@ export default function Home() {
     return () => { socket.disconnect(); };
   }, [account?.id, workspace?.id, loadDay, loadCalendar, notify, reloadWorkspace]);
 
-  useEffect(() => {
-    if (!['home', 'day'].includes(page) || stories.length === 0) return;
-    const frame = window.requestAnimationFrame(() => chatSurfaceRef.current?.scrollTo({ top: chatSurfaceRef.current.scrollHeight, behavior: 'smooth' }));
-    return () => window.cancelAnimationFrame(frame);
-  }, [stories, page, day]);
 
   const partner = useMemo(() => workspace?.members.find((member) => member.id !== account?.id) || null, [workspace, account]);
   const timeline = useMemo(() => stories
     .flatMap((story) => story.entries.map((entry) => ({ story, entry })))
     .sort((left, right) => Date.parse(left.entry.createdAt) - Date.parse(right.entry.createdAt)
       || left.entry.id.localeCompare(right.entry.id)), [stories]);
+  const dayReady = loadedDay === day;
+  const lastTimelineItem = timeline.at(-1);
+
+  // Jump to the newest message when a day opens; afterwards only follow new messages if the
+  // reader is already near the bottom (or sent it), so reactions and comments never yank the view.
+  useEffect(() => {
+    const surface = chatSurfaceRef.current;
+    if (!surface || !['home', 'day'].includes(page)) { scrolledTimelineRef.current = { key: '', count: 0 }; return; }
+    if (!dayReady) return;
+    const key = `${page}:${day}`;
+    const previous = scrolledTimelineRef.current;
+    scrolledTimelineRef.current = { key, count: timeline.length };
+    if (previous.key !== key) {
+      const frame = window.requestAnimationFrame(() => surface.scrollTo({ top: surface.scrollHeight }));
+      return () => window.cancelAnimationFrame(frame);
+    }
+    if (timeline.length <= previous.count) return;
+    const nearBottom = surface.scrollHeight - surface.scrollTop - surface.clientHeight < 160;
+    if (!nearBottom && lastTimelineItem?.story.author.id !== account?.id) return;
+    const frame = window.requestAnimationFrame(() => surface.scrollTo({ top: surface.scrollHeight, behavior: prefersReducedMotion() ? 'auto' : 'smooth' }));
+    return () => window.cancelAnimationFrame(frame);
+  }, [timeline.length, lastTimelineItem, dayReady, page, day, account?.id]);
+
+  // The composer grows with its text instead of showing a resize handle.
+  useEffect(() => {
+    const input = composerInputRef.current;
+    if (!input) return;
+    input.style.height = 'auto';
+    input.style.height = `${Math.min(input.scrollHeight + 2, 120)}px`;
+  }, [content]);
+
   const visibleTimeline = useMemo(() => {
     const query = chatSearch.trim().toLocaleLowerCase('vi');
     if (!query) return timeline;
@@ -534,8 +623,8 @@ export default function Home() {
         </header>
 
         <nav className="top-nav" data-active={page === 'home' || page === 'calendar' ? page : 'none'} aria-label="Điều hướng chính">
-          <button className={`nav-button ${page === 'home' ? 'active' : ''}`} onClick={() => { setDay(todayInVietnam()); setPage('home'); }}><House size={17} /> Hôm nay</button>
-          <button className={`nav-button ${page === 'calendar' ? 'active' : ''}`} onClick={() => setPage('calendar')}><CalendarDays size={17} /> Kỷ niệm</button>
+          <button className={`nav-button ${page === 'home' ? 'active' : ''}`} type="button" aria-current={page === 'home' ? 'page' : undefined} onClick={() => { setDay(todayInVietnam()); setPage('home'); }}><House size={17} /> Hôm nay</button>
+          <button className={`nav-button ${page === 'calendar' ? 'active' : ''}`} type="button" aria-current={page === 'calendar' ? 'page' : undefined} onClick={() => setPage('calendar')}><CalendarDays size={17} /> Kỷ niệm</button>
         </nav>
       </div>
 
@@ -564,7 +653,7 @@ export default function Home() {
           </header>
           <div className="chat-panel-body">
             <div ref={chatSurfaceRef} className="chat-surface" style={{ backgroundColor: workspace.chatBackground || '#fff7fb', backgroundImage: workspace.chatBackgroundImageUrl ? `linear-gradient(rgba(255,255,255,.78), rgba(255,255,255,.78)), url("${workspace.chatBackgroundImageUrl}")` : undefined }}>
-              {chatSearch.trim() && visibleTimeline.length === 0 ? <section className="empty-state chat-empty-state"><Search size={23} /><h3>Không tìm thấy tin nhắn</h3><p>Thử một từ khóa khác trong ngày này nhé.</p></section> : visibleTimeline.length === 0 ? <section className="empty-state chat-empty-state"><Heart size={23} /><h3>Ngày mới, câu chuyện mới</h3><p>{partner ? 'Kể một điều nho nhỏ trong ngày, người ấy sẽ tìm thấy ở đây.' : 'Mời người ấy vào workspace để hai bạn bắt đầu cùng nhau.'}</p></section> : <section className="chat-thread" aria-label="Cuộc trò chuyện trong ngày">{visibleTimeline.map(({ story, entry }) => <StoryCard key={entry.id} story={story} entry={entry} isLastEntry={entry.id === story.entries.at(-1)?.id} accountId={account.id} busy={busy} replyTarget={replyTarget} replyContent={replyContent} setReplyTarget={setReplyTarget} setReplyContent={setReplyContent} onReply={postReply} onReaction={(emoji) => postReaction(story.id, entry.id, emoji)} onRefresh={() => loadDay(day)} notify={notify} onViewPhoto={setViewedPhoto} />)}</section>}
+              {!dayReady ? <ChatSkeleton /> : chatSearch.trim() && visibleTimeline.length === 0 ? <section className="empty-state chat-empty-state"><Search size={23} /><h3>Không tìm thấy tin nhắn</h3><p>Thử một từ khóa khác trong ngày này nhé.</p></section> : visibleTimeline.length === 0 ? <section className="empty-state chat-empty-state"><Heart size={23} /><h3>Ngày mới, câu chuyện mới</h3><p>{partner ? 'Kể một điều nho nhỏ trong ngày, người ấy sẽ tìm thấy ở đây.' : 'Mời người ấy vào workspace để hai bạn bắt đầu cùng nhau.'}</p></section> : <section className="chat-thread" aria-label="Cuộc trò chuyện trong ngày">{visibleTimeline.map(({ story, entry }) => <StoryCard key={entry.id} story={story} entry={entry} isLastEntry={entry.id === story.entries.at(-1)?.id} accountId={account.id} busy={busy} replyTarget={replyTarget} replyContent={replyContent} setReplyTarget={setReplyTarget} setReplyContent={setReplyContent} onReply={postReply} onReaction={(emoji) => postReaction(story.id, entry.id, emoji)} onRefresh={() => loadDay(day)} notify={notify} onViewPhoto={setViewedPhoto} />)}</section>}
             </div>
             <button className="summary-chat-fab" type="button" onClick={() => setSummaryOpen(true)} aria-haspopup="dialog" aria-label="Mở tóm tắt AI cho ngày này" title="Tóm tắt AI">
               <Sparkles size={16} /><span>Tóm tắt AI</span>{summary?.summary && <span className="summary-ready-dot" aria-label="Đã có tóm tắt" />}
@@ -575,12 +664,12 @@ export default function Home() {
             {recording && <div className="recording-status" role="status"><video ref={recordingPreviewRef} className="recording-preview" muted autoPlay playsInline aria-label="Xem trước camera" /><span className="recording-dot" /> Đang quay {String(recordingSeconds).padStart(2, '0')}s / {MAX_VIDEO_SECONDS}s <button className="recording-stop" type="button" onClick={stopVideoRecording} title="Dừng quay" aria-label="Dừng quay"><Square size={13} fill="currentColor" /></button></div>}
             <div className="composer-row">
               <label className="composer-icon" htmlFor="story-files" title="Thêm ảnh" aria-label="Thêm ảnh"><Camera size={19} /></label>
-              <input id="story-files" className="file-input" type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={filesChanged} />
-              <input id="story-video" className="file-input" type="file" accept="video/webm,video/mp4,video/quicktime" capture="user" onChange={videoFileChanged} />
+              <input id="story-files" className="file-input" aria-label="Thêm ảnh" type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={filesChanged} />
+              <input id="story-video" className="file-input" tabIndex={-1} aria-hidden="true" type="file" accept="video/webm,video/mp4,video/quicktime" capture="user" onChange={videoFileChanged} />
               <button className={`composer-icon ${recording ? 'recording-active' : ''}`} type="button" onClick={() => void (recording ? stopVideoRecording() : startVideoRecording())} disabled={busy} title={recording ? 'Dừng quay video' : 'Quay video tối đa 7 giây'} aria-label={recording ? 'Dừng quay video' : 'Quay video tối đa 7 giây'}>{recording ? <Square size={17} fill="currentColor" /> : <Video size={19} />}</button>
-              <textarea className="composer-input" maxLength={10000} value={content} onChange={(event) => setContent(event.target.value)} aria-label="Kể chuyện hôm nay" placeholder="Kể người ấy nghe một điều đáng nhớ…" />
+              <textarea ref={composerInputRef} className="composer-input" rows={1} maxLength={10000} value={content} onChange={(event) => setContent(event.target.value)} aria-label="Kể chuyện hôm nay" placeholder="Kể người ấy nghe một điều đáng nhớ…" />
               <button className="composer-icon draft-icon" type="submit" name="status" value="DRAFT" disabled={busy || recording} title="Lưu nháp" aria-label="Lưu nháp"><Bookmark size={18} /></button>
-              <button className="composer-icon send-icon" type="submit" name="status" value="PUBLISHED" disabled={busy || recording} title="Chia sẻ" aria-label="Chia sẻ"><Send size={18} /></button>
+              <button className="composer-icon send-icon" type="submit" name="status" value="PUBLISHED" disabled={busy || recording} title="Chia sẻ" aria-label="Chia sẻ">{busy && !recording ? <span className="busy-dot" /> : <Send size={18} />}</button>
             </div>
           </form>}
         </div>
@@ -596,7 +685,7 @@ export default function Home() {
           </div>
         </header>
         <AnniversaryManager year={calendarYear} items={anniversaries} gender={account.gender || 'UNSPECIFIED'} onChanged={() => loadCalendar(calendarYear)} notify={notify} timezone={workspace.timezone || 'Asia/Ho_Chi_Minh'} />
-        {calendarLoading ? <p className="calendar-status" role="status">Đang mở kỷ niệm…</p> : memoryMonths.length === 0 ? <div className="calendar-empty"><Heart size={24} /><p>Năm {calendarYear} chưa có ngày kỷ niệm nào.</p></div> : <div className="memory-months">
+        {calendarLoading ? <CalendarSkeleton /> : memoryMonths.length === 0 ? <div className="calendar-empty"><Heart size={24} /><p>Năm {calendarYear} chưa có ngày kỷ niệm nào.</p></div> : <div className="memory-months">
           {memoryMonths.map(([month, memories]) => {
             const [year, monthNumber] = month.split('-').map(Number);
             const daysInMonth = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
@@ -623,7 +712,7 @@ export default function Home() {
 
       {page === 'profile' && <ProfilePage account={account} workspace={workspace} partner={partner} busy={busy} inviteUrl={inviteUrl} reminderRevision={reminderRevision} onInvite={createInvitation} notify={notify} onAccount={setAccount} onWorkspace={reloadWorkspace} />}
 
-      <PhotoLightbox photo={viewedPhoto} onClose={closePhoto} />
+      {viewedPhoto && <PhotoLightbox key={viewedPhoto.url} photo={viewedPhoto} onClose={closePhoto} />}
       {chatSettingsOpen && <ChatSettingsDialog account={account} workspace={workspace} notify={notify} onAccount={setAccount} onWorkspace={reloadWorkspace} onClose={() => setChatSettingsOpen(false)} />}
       {summaryOpen && <SummaryDialog date={day} summary={summary} busy={summaryBusy} canCreate={canCreateSummary} onCreate={makeSummary} onClose={() => setSummaryOpen(false)} />}
 
@@ -637,17 +726,16 @@ function AuthScreen({ busy, toast, onSubmit }: { busy: boolean; toast: string; o
     await onSubmit(event, mode);
   };
   return <main className="auth-wrap">
-    {toast && <div className="toast" role="status" key={toast}>{toast}</div>}
     <form className="panel auth-card" onSubmit={handle}>
       <div className="auth-title"><span className="brand-mark"><Heart size={25} fill="currentColor" /></span><h1>Trò chuyện với nhau<br />sau 1 ngày dài</h1><p>Một góc nhỏ để mình lắng nghe nhau.</p></div>
-      <div className="auth-toggle" data-mode={mode}><button type="button" className={mode === 'login' ? 'active' : ''} onClick={() => setMode('login')}>Đăng nhập</button><button type="button" className={mode === 'register' ? 'active' : ''} onClick={() => setMode('register')}>Tạo tài khoản</button></div>
+      <div className="auth-toggle" data-mode={mode} role="group" aria-label="Chọn cách vào"><button type="button" className={mode === 'login' ? 'active' : ''} aria-pressed={mode === 'login'} onClick={() => setMode('login')}>Đăng nhập</button><button type="button" className={mode === 'register' ? 'active' : ''} aria-pressed={mode === 'register'} onClick={() => setMode('register')}>Tạo tài khoản</button></div>
       <div className="auth-fields">
         {mode === 'register' && <label><span className="field-label">Tên bạn muốn người ấy gọi</span><input className="text-field" name="displayName" autoComplete="name" maxLength={50} required placeholder="Ví dụ: Minh Anh" /></label>}
         <label><span className="field-label">Email</span><input className="text-field" type="email" name="email" autoComplete="email" maxLength={254} required placeholder="ban@email.com" /></label>
         <label><span className="field-label">Mật khẩu</span><input className="text-field" type="password" name="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} minLength={10} maxLength={128} required placeholder="Ít nhất 10 ký tự" /></label>
         <button className="button button-primary full-button" disabled={busy}>{busy ? 'Đang mở…' : mode === 'login' ? <><LockKeyhole size={16} /> Đăng nhập</> : <><Heart size={16} /> Tạo tài khoản</>}</button>
       </div>
-      {toast && <p className="error-text" role="status">{toast}</p>}
+      {toast && <p className="error-text auth-error" role="alert" key={toast}>{toast}</p>}
       <p className="auth-foot">Mỗi người có tài khoản riêng. Sau khi đăng nhập, bạn có thể kết nối bằng lời mời của người ấy.</p>
     </form>
   </main>;
@@ -671,25 +759,19 @@ function SummaryDialog({ date, summary, busy, canCreate, onCreate, onClose }: {
   date: string; summary: SummaryState | null; busy: boolean; canCreate: boolean;
   onCreate: () => void; onClose: () => void;
 }) {
-  useEffect(() => {
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', closeOnEscape);
-    return () => window.removeEventListener('keydown', closeOnEscape);
-  }, [onClose]);
+  const { panelRef, closing, close } = useModal(onClose);
 
-  return <div className="dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-    <section className="summary-dialog" role="dialog" aria-modal="true" aria-labelledby="summary-dialog-title">
+  return <div className={`dialog-backdrop ${closing ? 'closing' : ''}`} onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}>
+    <section ref={panelRef} tabIndex={-1} className="summary-dialog" role="dialog" aria-modal="true" aria-labelledby="summary-dialog-title">
       <header className="dialog-heading">
         <div><p className="section-kicker"><Sparkles size={15} /> Gói lại một ngày</p><h2 id="summary-dialog-title">Tóm tắt ngày của hai đứa</h2><p className="summary-dialog-date">{formatDay(date)}</p></div>
-        <button className="icon-button" type="button" title="Đóng" aria-label="Đóng tóm tắt" onClick={onClose}><X size={18} /></button>
+        <button className="icon-button" type="button" title="Đóng" aria-label="Đóng tóm tắt" onClick={close}><X size={18} /></button>
       </header>
       <div className={`summary-dialog-content ${summary?.summary ? '' : 'summary-dialog-empty'}`} aria-live="polite" aria-busy={busy}>
         {summary?.summary ? <>{summary.summary}{summary.stale && <p className="summary-hint">Có chia sẻ mới trong ngày. Tạo lại để cập nhật tóm tắt.</p>}</> : <p>{canCreate ? 'AI sẽ tóm tắt những câu chuyện bằng chữ hai bạn đã chia sẻ trong ngày.' : 'Hãy thêm một câu chuyện bằng chữ trong ngày này trước nhé.'}</p>}
       </div>
       <footer className="dialog-actions">
-        <button className="button button-quiet" type="button" onClick={onClose}>Đóng</button>
+        <button className="button button-quiet" type="button" onClick={close}>Đóng</button>
         <button className="button button-primary" type="button" onClick={onCreate} disabled={busy || !canCreate}><Sparkles size={15} />{busy ? 'Đang tóm tắt…' : summary?.summary ? 'Tạo lại tóm tắt' : 'Tóm tắt ngày này'}</button>
       </footer>
     </section>
@@ -802,11 +884,7 @@ function ChatSettingsDialog({ account, workspace, notify, onAccount, onWorkspace
     if (previewUrl) return () => URL.revokeObjectURL(previewUrl);
   }, [previewUrl]);
 
-  useEffect(() => {
-    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', closeOnEscape);
-    return () => window.removeEventListener('keydown', closeOnEscape);
-  }, [onClose]);
+  const { panelRef, closing, close } = useModal(onClose);
 
   const chooseColor = (value: string) => {
     setBackground(value);
@@ -846,15 +924,15 @@ function ChatSettingsDialog({ account, workspace, notify, onAccount, onWorkspace
       await api('/couples/me', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chatBackground: background }) });
       await onWorkspace();
       notify('Cài đặt chat đã được lưu cho hai bạn.');
-      onClose();
+      close();
     } catch (error) {
       notify(error instanceof Error ? error.message : 'Chưa lưu được cài đặt chat.');
     } finally { setBusy(false); }
   };
 
-  return <div className="dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-    <section className="chat-settings-dialog" role="dialog" aria-modal="true" aria-labelledby="chat-settings-title">
-      <header className="dialog-heading"><div><p className="section-kicker"><Settings2 size={15} /> Tùy chỉnh riêng cho góc nhỏ này</p><h2 id="chat-settings-title">Cài đặt chat</h2></div><button className="icon-button" type="button" title="Đóng" aria-label="Đóng cài đặt chat" onClick={onClose}><X size={18} /></button></header>
+  return <div className={`dialog-backdrop ${closing ? 'closing' : ''}`} onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}>
+    <section ref={panelRef} tabIndex={-1} className="chat-settings-dialog" role="dialog" aria-modal="true" aria-labelledby="chat-settings-title">
+      <header className="dialog-heading"><div><p className="section-kicker"><Settings2 size={15} /> Tùy chỉnh riêng cho góc nhỏ này</p><h2 id="chat-settings-title">Cài đặt chat</h2></div><button className="icon-button" type="button" title="Đóng" aria-label="Đóng cài đặt chat" onClick={close}><X size={18} /></button></header>
       <form className="chat-settings-form" onSubmit={saveSettings}>
         <section className="chat-setting-section">
           <h3>Hiển thị của mình</h3>
@@ -865,9 +943,9 @@ function ChatSettingsDialog({ account, workspace, notify, onAccount, onWorkspace
           <h3>Nền cuộc trò chuyện</h3>
           <div className="background-picker" role="group" aria-label="Chọn màu nền chat">{['#fff7fb', '#fff1f2', '#fff7ed', '#f0fdf4', '#eff6ff', '#f5f3ff'].map((color) => <button className="color-swatch" type="button" key={color} aria-label={`Nền ${color}`} aria-pressed={!imageUrl && background === color} style={{ backgroundColor: color }} onClick={() => chooseColor(color)} />)}<label className="custom-color-swatch" title="Chọn màu khác"><input type="color" value={background} aria-label="Màu nền tùy chỉnh" onChange={(event) => chooseColor(event.target.value)} /></label></div>
           {imageUrl && <div className="chat-background-preview"><img src={imageUrl} alt="Xem trước ảnh nền chat" /><button className="photo-remove" type="button" aria-label="Bỏ ảnh nền" title="Bỏ ảnh nền" onClick={() => { setSelectedFile(null); setClearExistingImage(Boolean(workspace.chatBackgroundImageUrl)); }}><X size={16} /></button></div>}
-          <div className="button-row"><label className="button button-soft" htmlFor="chat-background-file"><ImagePlus size={16} /> Tải ảnh nền</label><input className="file-input" id="chat-background-file" type="file" accept="image/jpeg,image/png,image/webp" onChange={chooseImage} />{workspace.chatBackgroundImageUrl && !imageUrl && <span className="muted-small">Đang dùng màu nền</span>}</div>
+          <div className="button-row"><label className="button button-soft" htmlFor="chat-background-file"><ImagePlus size={16} /> Tải ảnh nền</label><input className="file-input" id="chat-background-file" aria-label="Tải ảnh nền" type="file" accept="image/jpeg,image/png,image/webp" onChange={chooseImage} />{workspace.chatBackgroundImageUrl && !imageUrl && <span className="muted-small">Đang dùng màu nền</span>}</div>
         </section>
-        <div className="dialog-actions"><button className="button button-quiet" type="button" onClick={onClose} disabled={busy}>Hủy</button><button className="button button-primary" disabled={busy}>{busy ? 'Đang lưu…' : <><Check size={15} /> Lưu cài đặt</>}</button></div>
+        <div className="dialog-actions"><button className="button button-quiet" type="button" onClick={close} disabled={busy}>Hủy</button><button className="button button-primary" disabled={busy}>{busy ? 'Đang lưu…' : <><Check size={15} /> Lưu cài đặt</>}</button></div>
       </form>
     </section>
   </div>;
@@ -967,35 +1045,35 @@ function MessageReactions({ reactions, onReact }: { reactions: MessageReaction[]
   </div>;
 }
 
-function PhotoLightbox({ photo, onClose }: { photo: ViewedPhoto | null; onClose: () => void }) {
+function PhotoLightbox({ photo, onClose }: { photo: ViewedPhoto; onClose: () => void }) {
   const [zoom, setZoom] = useState(1);
+  const { panelRef, closing, close } = useModal(onClose);
+  const stageRef = useRef<HTMLDivElement>(null);
+  const zoomBy = useCallback((amount: number) => setZoom((current) => Math.max(0.5, Math.min(4, Number((current + amount).toFixed(2))))), []);
 
   useEffect(() => {
-    if (!photo) return;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-      if (event.key === '+' || event.key === '=') setZoom((current) => Math.min(4, Number((current + 0.25).toFixed(2))));
-      if (event.key === '-') setZoom((current) => Math.max(0.5, Number((current - 0.25).toFixed(2))));
+      if (event.key === '+' || event.key === '=') zoomBy(0.25);
+      if (event.key === '-') zoomBy(-0.25);
       if (event.key === '0') setZoom(1);
     };
     window.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener('keydown', onKeyDown);
-    };
-  }, [photo, onClose]);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [zoomBy]);
 
-  useEffect(() => setZoom(1), [photo?.url]);
+  // React's onWheel is passive, so preventDefault there is ignored and the stage scrolls while zooming.
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    const onWheel = (event: WheelEvent) => { event.preventDefault(); zoomBy(event.deltaY < 0 ? 0.15 : -0.15); };
+    stage.addEventListener('wheel', onWheel, { passive: false });
+    return () => stage.removeEventListener('wheel', onWheel);
+  }, [zoomBy]);
 
-  if (!photo) return null;
-  const zoomBy = (amount: number) => setZoom((current) => Math.max(0.5, Math.min(4, Number((current + amount).toFixed(2)))));
-
-  return <div className="photo-lightbox" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-    <section className="photo-lightbox-panel" role="dialog" aria-modal="true" aria-label="Xem ảnh">
-      <button className="photo-lightbox-button photo-lightbox-close" type="button" onClick={onClose} title="Đóng ảnh" aria-label="Đóng ảnh"><X size={20} /></button>
-      <div className="photo-lightbox-stage" onWheel={(event) => { event.preventDefault(); zoomBy(event.deltaY < 0 ? 0.15 : -0.15); }}>
+  return <div className={`photo-lightbox ${closing ? 'closing' : ''}`} onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}>
+    <section ref={panelRef} tabIndex={-1} className="photo-lightbox-panel" role="dialog" aria-modal="true" aria-label="Xem ảnh">
+      <button className="photo-lightbox-button photo-lightbox-close" type="button" onClick={close} title="Đóng ảnh" aria-label="Đóng ảnh"><X size={20} /></button>
+      <div ref={stageRef} className="photo-lightbox-stage">
         <img className="photo-lightbox-image" src={photo.url} alt={photo.alt} style={{ transform: `scale(${zoom})` }} />
       </div>
       <div className="photo-lightbox-controls" aria-label="Điều chỉnh kích thước ảnh">
@@ -1004,6 +1082,21 @@ function PhotoLightbox({ photo, onClose }: { photo: ViewedPhoto | null; onClose:
         <button className="photo-lightbox-button" type="button" onClick={() => zoomBy(0.25)} disabled={zoom >= 4} title="Phóng to" aria-label="Phóng to"><ZoomIn size={18} /></button>
         <button className="photo-lightbox-button" type="button" onClick={() => setZoom(1)} disabled={zoom === 1} title="Vừa màn hình" aria-label="Vừa màn hình"><RotateCcw size={17} /></button>
       </div>
+    </section>
+  </div>;
+}
+
+function ChatSkeleton() {
+  return <div className="chat-skeleton" role="status" aria-label="Đang tải cuộc trò chuyện">
+    {['theirs', 'mine', 'theirs'].map((side, index) => <div className={`skeleton-bubble ${side}`} key={index}><span className="skeleton skeleton-avatar" /><span className="skeleton skeleton-line" /></div>)}
+  </div>;
+}
+
+function CalendarSkeleton() {
+  return <div className="memory-months" role="status" aria-label="Đang mở kỷ niệm">
+    <section className="memory-month">
+      <span className="skeleton skeleton-heading" />
+      <div className="memory-week-skeleton">{Array.from({ length: 14 }, (_, index) => <span className="skeleton skeleton-tile" key={index} style={{ animationDelay: `${index * 40}ms` }} />)}</div>
     </section>
   </div>;
 }
@@ -1147,7 +1240,7 @@ function ProfilePage({ account, workspace, partner, busy, inviteUrl, reminderRev
         <label><span className="field-label">Tên hiển thị</span><input className="text-field" maxLength={50} required value={name} onChange={(event) => setName(event.target.value)} /></label>
         <label><span className="field-label">Giới tính</span><select className="text-field" value={gender} onChange={(event) => setGender(event.target.value as Gender)}><option value="UNSPECIFIED">Chưa chọn</option><option value="MALE">Nam</option><option value="FEMALE">Nữ</option><option value="OTHER">Khác</option></select></label>
         <label><span className="field-label">Một chút về mình</span><textarea className="text-field profile-bio" maxLength={200} value={bio} onChange={(event) => setBio(event.target.value)} placeholder="Một điều bạn muốn người ấy biết…" /></label>
-        <div className="button-row"><button className="button button-primary" disabled={busy}><Check size={15} /> Lưu hồ sơ</button><label className="button button-soft" htmlFor="avatar-file"><Camera size={15} /> {uploadBusy ? 'Đang tải…' : 'Đổi ảnh'}</label><input className="file-input" id="avatar-file" type="file" accept="image/jpeg,image/png,image/webp" onChange={uploadAvatar} />{account.avatarUrl && <button type="button" className="button button-quiet" onClick={() => void clearAvatar()}>Xóa ảnh</button>}</div>
+        <div className="button-row"><button className="button button-primary" disabled={busy}><Check size={15} /> Lưu hồ sơ</button><label className="button button-soft" htmlFor="avatar-file"><Camera size={15} /> {uploadBusy ? 'Đang tải…' : 'Đổi ảnh'}</label><input className="file-input" id="avatar-file" aria-label="Đổi ảnh đại diện" type="file" accept="image/jpeg,image/png,image/webp" onChange={uploadAvatar} />{account.avatarUrl && <button type="button" className="button button-quiet" onClick={() => void clearAvatar()}>Xóa ảnh</button>}</div>
       </form>
     </section>
     <section className="panel settings-card"><h3>Bảo mật tài khoản</h3><form className="profile-form" onSubmit={changePassword}><label><span className="field-label">Mật khẩu hiện tại</span><input className="text-field" type="password" name="currentPassword" minLength={10} maxLength={128} required autoComplete="current-password" /></label><label><span className="field-label">Mật khẩu mới</span><input className="text-field" type="password" name="newPassword" minLength={10} maxLength={128} required autoComplete="new-password" /></label><button className="button button-soft" disabled={passwordBusy}>Đổi mật khẩu</button></form></section>
