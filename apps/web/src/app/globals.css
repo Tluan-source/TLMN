@@ -639,7 +639,7 @@ button, label, a { -webkit-tap-highlight-color: transparent; }
 
 .shell.has-chat-composer .chat-stage { height: auto; flex: 1 1 auto; }
 .chat-panel-header { min-height: 56px; }
-.chat-panel-title h2 { font-size: 16px; }
+.chat-panel-title h2 { font-size: 15px; }
 .chat-panel-title span { font-size: 12px; }
 
 .chat-thread { gap: 16px; }
@@ -650,7 +650,7 @@ button, label, a { -webkit-tap-highlight-color: transparent; }
 .message-entry { padding: 8px 13px; }
 .message-entry.outgoing { border-radius: 20px 20px 6px 20px; }
 .message-entry.incoming { border-radius: 20px 20px 20px 6px; }
-.message-copy { font-size: 17px; line-height: 1.4; }
+.message-copy { font-size: 16px; line-height: 1.4; }
 .photo-grid.single-photo { width: min(320px, 72vw); }
 .photo-grid.multiple-photos { width: min(420px, 78vw); }
 .photo-grid img, .photo-open { border-radius: 14px; }
@@ -663,7 +663,7 @@ button, label, a { -webkit-tap-highlight-color: transparent; }
   .topbar { padding-top: 8px; }
   .brand p { display: none; }
   .brand h1 { font-size: 14px; }
-  .chat-panel-title h2 { font-size: 15px; }
+  .chat-panel-title h2 { font-size: 14px; }
   .message-group { max-width: 84%; }
   .composer-input { font-size: 16px; padding: 10px 12px; }
 }
