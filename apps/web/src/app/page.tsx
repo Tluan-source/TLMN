@@ -405,6 +405,7 @@ export default function Home() {
   const canCreateSummary = summary?.canCreate !== false
     && (stories.some((story) => story.entries.some((entry) => entry.content.trim())) || Boolean(summary?.summary));
   const streakProgress = Math.max(0, Math.min(100, streak?.progress ?? 0));
+  const streakLabel = `${streak?.month ? `Trái tim ${formatMonth(streak.month)}` : 'Trái tim tháng này'}: ${streak?.monthStreakDays ?? 0}/${streak?.target ?? 30} ngày giữ streak · ${streak?.current ?? 0} ngày liên tiếp · Kỷ lục ${streak?.best ?? 0}`;
 
   const authenticate = async (event: FormEvent<HTMLFormElement>, mode: 'login' | 'register') => {
     event.preventDefault();
@@ -646,22 +647,17 @@ export default function Home() {
           </div>
         </header>
 
-        <nav className="top-nav" data-active={page === 'home' || page === 'calendar' ? page : 'none'} aria-label="Điều hướng chính">
-          <button className={`nav-button ${page === 'home' ? 'active' : ''}`} type="button" aria-current={page === 'home' ? 'page' : undefined} onClick={() => { setDay(todayInVietnam()); setPage('home'); }}><House size={17} /> Hôm nay</button>
-          <button className={`nav-button ${page === 'calendar' ? 'active' : ''}`} type="button" aria-current={page === 'calendar' ? 'page' : undefined} onClick={() => setPage('calendar')}><CalendarDays size={17} /> Kỷ niệm</button>
-        </nav>
+        <div className="nav-row">
+          <nav className="top-nav" data-active={page === 'home' || page === 'calendar' ? page : 'none'} aria-label="Điều hướng chính">
+            <button className={`nav-button ${page === 'home' ? 'active' : ''}`} type="button" aria-current={page === 'home' ? 'page' : undefined} onClick={() => { setDay(todayInVietnam()); setPage('home'); }}><House size={17} /> Hôm nay</button>
+            <button className={`nav-button ${page === 'calendar' ? 'active' : ''}`} type="button" aria-current={page === 'calendar' ? 'page' : undefined} onClick={() => setPage('calendar')}><CalendarDays size={17} /> Kỷ niệm</button>
+          </nav>
+          {/* The streak details live in the heart's label/tooltip so the row stays one line. */}
+          <span className="heart-badge nav-heart" role="img" aria-label={streakLabel} title={streakLabel}><StreakHeart progress={streakProgress} /></span>
+        </div>
       </div>
 
         {(page === 'home' || page === 'day') && <>
-        {page === 'home' && <section className="panel streak-panel" aria-label="Chuỗi ngày cùng chia sẻ">
-          <div className="streak-copy">
-            <h2>{streak?.month ? `Trái tim ${formatMonth(streak.month)}` : 'Trái tim tháng này'}</h2>
-            <p>{streak?.todayComplete ? 'Thêm một ngày mình lắng nghe nhau 💗' : partner ? 'Hôm nay đang chờ câu chuyện của cả hai.' : 'Mời người ấy đến cùng viết câu chuyện nhé.'}</p>
-            <div className="streak-progress" aria-label={`Tiến độ trái tim tháng ${streak?.month || todayInVietnam().slice(0, 7)}: ${streak?.monthStreakDays ?? 0}/${streak?.target ?? 30} ngày giữ streak`}><span style={{ width: `${streakProgress}%` }} /></div>
-            <p>{streak?.progress === 100 ? `Trái tim tháng này đã đầy sau ${streak.monthStreakDays} ngày giữ streak 💗` : `${streak?.monthStreakDays ?? 0}/${streak?.target ?? 30} ngày giữ streak tháng này · ${streak?.current ?? 0} ngày liên tiếp · Kỷ lục ${streak?.best ?? 0}`}</p>
-          </div>
-          <span className="heart-badge" aria-hidden="true"><StreakHeart progress={streakProgress} /></span>
-        </section>}
 
         {page === 'day' && <div className="date-row"><h2>{day === todayInVietnam() ? 'Hôm nay' : 'Ngày mình cùng nhớ'}</h2><div className="date-controls"><button className="icon-button" type="button" title="Quay lại Kỷ niệm" aria-label="Quay lại Kỷ niệm" onClick={() => setPage('calendar')}><ChevronLeft size={18} /></button><input className="date-picker" type="date" aria-label="Chọn ngày câu chuyện" max={todayInVietnam()} value={day} onChange={(event) => { const nextDay = event.target.value; setDay(nextDay); setPage(nextDay === todayInVietnam() ? 'home' : 'day'); }} /></div></div>}
         </>}
