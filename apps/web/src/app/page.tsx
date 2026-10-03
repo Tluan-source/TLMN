@@ -26,19 +26,24 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 // Phone camera photos are often 3–10 MB; shrink them before upload so sending stays fast on mobile data.
 async function shrinkImage(file: File, maxSide = 2048, quality = 0.85): Promise<File> {
   if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size <= 1024 * 1024) return file;
+  const url = URL.createObjectURL(file);
   try {
-    const bitmap = await createImageBitmap(file);
-    const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+    // Decode through <img> so the camera's EXIF rotation is applied; createImageBitmap ignores it on some phones.
+    const image = new Image();
+    image.src = url;
+    await image.decode();
+    const scale = Math.min(1, maxSide / Math.max(image.naturalWidth, image.naturalHeight));
     const canvas = document.createElement('canvas');
-    canvas.width = Math.round(bitmap.width * scale);
-    canvas.height = Math.round(bitmap.height * scale);
-    canvas.getContext('2d')?.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-    bitmap.close();
+    canvas.width = Math.round(image.naturalWidth * scale);
+    canvas.height = Math.round(image.naturalHeight * scale);
+    canvas.getContext('2d')?.drawImage(image, 0, 0, canvas.width, canvas.height);
     const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', quality));
     if (!blob || blob.size >= file.size) return file;
     return new File([blob], file.name.replace(/\.\w+$/, '') + '.jpg', { type: 'image/jpeg' });
   } catch {
     return file;
+  } finally {
+    URL.revokeObjectURL(url);
   }
 }
 
