@@ -650,7 +650,7 @@ button, label, a { -webkit-tap-highlight-color: transparent; }
 .message-entry { padding: 8px 13px; }
 .message-entry.outgoing { border-radius: 20px 20px 6px 20px; }
 .message-entry.incoming { border-radius: 20px 20px 20px 6px; }
-.message-copy { font-size: 12px; line-height: 1.45; }
+.message-copy { font-size: 13px; line-height: 1.45; }
 .photo-grid.single-photo { width: min(320px, 72vw); }
 .photo-grid.multiple-photos { width: min(420px, 78vw); }
 .photo-grid img, .photo-open { border-radius: 14px; }
@@ -701,14 +701,14 @@ button, label, a { -webkit-tap-highlight-color: transparent; }
 }
 .message-time-below { margin-top: -4px; padding-inline: 6px; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
 
-/* Compact composer with 12px text (the viewport's maximum-scale keeps iOS from zooming into it). */
-.chat-composer, .chat-composer .composer-input { font-size: 12px; }
+/* Compact composer with 13px text (the viewport's maximum-scale keeps iOS from zooming into it). */
+.chat-composer, .chat-composer .composer-input { font-size: 13px; }
 .composer-icon { width: 34px; height: 34px; flex-basis: 34px; }
 .composer-icon svg { width: 16px; height: 16px; }
 .composer-input { min-height: 34px; padding: 7px 12px; border-radius: 17px; line-height: 1.4; }
 @media (max-width: 560px) {
   .chat-composer { padding: 5px 6px; }
   .composer-icon { width: 34px; height: 34px; flex-basis: 34px; }
-  .composer-input { min-height: 34px; padding: 7px 11px; font-size: 12px; }
+  .composer-input { min-height: 34px; padding: 7px 11px; font-size: 13px; }
 }
-@media (pointer: coarse) { .chat-composer .composer-input { font-size: 12px; } }
+@media (pointer: coarse) { .chat-composer .composer-input { font-size: 13px; } }
