@@ -650,7 +650,7 @@ button, label, a { -webkit-tap-highlight-color: transparent; }
 .message-entry { padding: 8px 13px; }
 .message-entry.outgoing { border-radius: 20px 20px 6px 20px; }
 .message-entry.incoming { border-radius: 20px 20px 20px 6px; }
-.message-copy { font-size: 16px; line-height: 1.4; }
+.message-copy { font-size: 12px; line-height: 1.45; }
 .photo-grid.single-photo { width: min(320px, 72vw); }
 .photo-grid.multiple-photos { width: min(420px, 78vw); }
 .photo-grid img, .photo-open { border-radius: 14px; }
