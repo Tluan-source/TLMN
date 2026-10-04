@@ -43,6 +43,7 @@ model User {
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
   sessions       Session[]
+  loginLogs      LoginLog[]
   memberships    CoupleMember[]
   invitations    Invitation[]    @relation("InvitationCreator")
   stories        DailyStory[]
@@ -62,6 +63,26 @@ model Session {
   createdAt DateTime @default(now())
 
   @@index([userId, expiresAt])
+}
+
+enum LoginEvent {
+  REGISTER
+  LOGIN
+  LOGIN_FAILED
+}
+
+model LoginLog {
+  id        String     @id @default(cuid())
+  userId    String?
+  user      User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+  email     String
+  event     LoginEvent
+  ip        String?    @db.VarChar(64)
+  userAgent String?    @db.VarChar(512)
+  createdAt DateTime   @default(now())
+
+  @@index([createdAt])
+  @@index([userId, createdAt])
 }
 
 model Couple {

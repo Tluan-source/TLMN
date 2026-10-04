@@ -13,20 +13,26 @@ const cookieOptions = () => ({
   maxAge: 30 * 24 * 60 * 60 * 1000,
 });
 
+// Requests arrive through the Next.js rewrite, so the browser's address is the first x-forwarded-for entry.
+const clientInfo = (request: Request) => ({
+  ip: request.get('x-forwarded-for')?.split(',')[0]?.trim() || request.socket.remoteAddress,
+  userAgent: request.get('user-agent'),
+});
+
 @Controller('auth')
 export class AuthController {
   constructor(private readonly auth: AuthService, private readonly realtime: ChatGateway) {}
 
   @Post('register')
-  async register(@Body() dto: RegisterDto, @Res({ passthrough: true }) response: Response) {
-    const result = await this.auth.register(dto);
+  async register(@Body() dto: RegisterDto, @Req() request: Request, @Res({ passthrough: true }) response: Response) {
+    const result = await this.auth.register(dto, clientInfo(request));
     response.cookie('journal_session', result.token, cookieOptions());
     return this.publicUser(result.user);
   }
 
   @Post('login')
-  async login(@Body() dto: CredentialsDto, @Res({ passthrough: true }) response: Response) {
-    const result = await this.auth.login(dto);
+  async login(@Body() dto: CredentialsDto, @Req() request: Request, @Res({ passthrough: true }) response: Response) {
+    const result = await this.auth.login(dto, clientInfo(request));
     response.cookie('journal_session', result.token, cookieOptions());
     return this.publicUser(result.user);
   }
