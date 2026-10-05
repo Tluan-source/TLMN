@@ -1,0 +1,1 @@
+ALTER TYPE "LoginEvent" ADD VALUE 'VISIT';

@@ -69,6 +69,7 @@ enum LoginEvent {
   REGISTER
   LOGIN
   LOGIN_FAILED
+  VISIT
 }
 
 model LoginLog {
