@@ -786,11 +786,12 @@ button, label, a { -webkit-tap-highlight-color: transparent; }
 .board-track { position: relative; display: flex; min-height: 530px; padding: 0 36px 26px; }
 .board-string { position: absolute; top: 0; left: 0; pointer-events: none; overflow: visible; }
 .board-string path { fill: none; stroke-linecap: round; stroke-linejoin: round; }
-.board-string .rope-shadow { stroke: rgba(55, 30, 10, .4); stroke-width: 4; transform: translate(1px, 5px); filter: blur(2px); }
-.board-string .rope-edge { stroke: #7d5a33; stroke-width: 5.5; }
-.board-string .rope-core { stroke: #c9a674; stroke-width: 3.8; }
-/* Short light dashes across the core read as the twisted strands of a jute rope. */
-.board-string .rope-twist { stroke: #ecd6aa; stroke-width: 3.8; stroke-linecap: butt; stroke-dasharray: 2.4 3.2; }
+.board-string .rope-shadow { stroke: rgba(55, 30, 10, .35); stroke-width: 3; transform: translate(1px, 5px); filter: blur(1.8px); }
+.board-string .rope-edge { stroke: #7f5a32; stroke-width: 4.6; }
+.board-string .rope-core { stroke: #c9a06a; stroke-width: 3.4; }
+/* Thin dark grooves across the core read as the twisted plies of jute twine. */
+.board-string .rope-twist { stroke: #94693b; stroke-width: 3.4; stroke-linecap: butt; stroke-dasharray: .9 2.7; }
+.board-string .rope-fuzz { stroke: rgba(240, 218, 176, .6); stroke-width: .8; stroke-dasharray: 1.4 4; transform: translate(0, -1.1px); }
 .board-string .rope-nail { fill: #9aa0a6; stroke: #5f6368; stroke-width: 1.5; }
 .board-column { display: flex; flex: 0 0 auto; flex-direction: column; align-items: center; }
 .board-hanger { position: relative; width: 100%; height: 318px; flex: 0 0 auto; }
@@ -799,8 +800,7 @@ button, label, a { -webkit-tap-highlight-color: transparent; }
 .board-photo-open { display: block; width: 100%; padding: 0; border: 0; background: #f3e8de; cursor: zoom-in; }
 .board-photo img, .board-photo video { display: block; width: 100%; aspect-ratio: 4 / 5; object-fit: cover; background: #f3e8de; }
 .board-photo figcaption { padding: 5px 2px 6px; color: #5a3d2e; font-family: var(--hand); font-size: 15px; line-height: 1.2; text-align: center; }
-.board-clip { position: absolute; z-index: 2; top: -15px; left: 50%; width: 12px; height: 26px; margin-left: -6px; border-radius: 3px; background: linear-gradient(90deg, #d8b07c, #f1d6a8 45%, #c99b62); box-shadow: 0 2px 3px rgba(55, 30, 10, .35); }
-.board-clip::after { content: ''; position: absolute; top: 9px; left: 2px; right: 2px; height: 2px; border-radius: 1px; background: #9a6e3c; }
+.board-clip { position: absolute; z-index: 2; top: -32px; left: 50%; margin-left: -9px; overflow: visible; filter: drop-shadow(0 2px 2px rgba(55, 30, 10, .35)); }
 @media (hover: hover) { .board-photo:hover { z-index: 3; box-shadow: 0 2px 0 rgba(0, 0, 0, .06), 0 14px 26px rgba(55, 30, 10, .42); } }
 
 .board-notes { display: flex; width: 100%; flex-direction: column; align-items: center; gap: 18px; padding: 0 10px; }
