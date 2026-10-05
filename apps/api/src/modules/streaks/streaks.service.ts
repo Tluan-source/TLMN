@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../shared/prisma.service';
-import { dateInTimezone, shiftDay } from '../../shared/dates';
+import { dateInTimezone, entryDays, shiftDay } from '../../shared/dates';
 import { CouplesService } from '../couples/couples.service';
 
 @Injectable()
@@ -20,11 +20,17 @@ export class StreaksService {
     });
     const validByDay = new Map<string, Set<string>>();
     for (const story of stories) {
-      if (!story.entries.some((entry) => entry.content.trim().length > 0 || entry.media.length > 0)) continue;
-      const day = story.date.toISOString().slice(0, 10);
-      const authors = validByDay.get(day) ?? new Set<string>();
-      authors.add(story.authorId);
-      validByDay.set(day, authors);
+      const storyDay = story.date.toISOString().slice(0, 10);
+      for (const entry of story.entries) {
+        if (!entry.content.trim() && entry.media.length === 0) continue;
+        // A message sent 00:00–03:00 keeps yesterday's streak alive as well as today's.
+        for (const day of entryDays(storyDay, entry.createdAt, couple.timezone)) {
+          if (day > today) continue;
+          const authors = validByDay.get(day) ?? new Set<string>();
+          authors.add(story.authorId);
+          validByDay.set(day, authors);
+        }
+      }
     }
     const completeDays = [...validByDay.entries()]
       .filter(([, authors]) => members.length === 2 && members.every((item) => authors.has(item.userId)))

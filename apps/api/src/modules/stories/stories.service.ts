@@ -1,6 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../shared/prisma.service';
-import { parseDay } from '../../shared/dates';
+import { entryDays, parseDay, shiftDay } from '../../shared/dates';
 import { CouplesService } from '../couples/couples.service';
 import { MediaService } from '../media/media.service';
 import { ChatGateway } from '../realtime/chat.gateway';
@@ -13,33 +13,93 @@ export class StoriesService {
 
   async listCalendar(userId: string, year: number) {
     const member = await this.couples.requireCouple(userId);
+    const timezone = await this.timezoneOf(member.coupleId);
+    // One day either side of the year: entries written 00:00–03:00 also belong to the previous day.
     const stories = await this.prisma.dailyStory.findMany({
       where: {
         coupleId: member.coupleId,
         status: 'PUBLISHED',
-        date: { gte: new Date(Date.UTC(year, 0, 1)), lt: new Date(Date.UTC(year + 1, 0, 1)) },
+        date: { gte: new Date(Date.UTC(year, 0, 0)), lt: new Date(Date.UTC(year + 1, 0, 2)) },
       },
-      select: { date: true, entries: { select: { media: { select: { id: true, mimeType: true } } } } },
+      select: { date: true, entries: { select: { createdAt: true, media: { select: { id: true, mimeType: true } } } } },
       orderBy: { date: 'desc' },
     });
     const photosByDay = new Map<string, string[]>();
     for (const story of stories) {
-      const date = story.date.toISOString().slice(0, 10);
-      const photos = photosByDay.get(date) || [];
-      photos.push(...story.entries.flatMap((entry) => entry.media.filter((photo) => photo.mimeType.startsWith('image/')).map((photo) => photo.id)));
-      photosByDay.set(date, photos);
+      const storyDay = story.date.toISOString().slice(0, 10);
+      for (const entry of story.entries) {
+        const photos = entry.media.filter((photo) => photo.mimeType.startsWith('image/')).map((photo) => photo.id);
+        for (const date of entryDays(storyDay, entry.createdAt, timezone)) {
+          if (Number(date.slice(0, 4)) !== year) continue;
+          photosByDay.set(date, [...(photosByDay.get(date) || []), ...photos]);
+        }
+      }
     }
     return Array.from(photosByDay, ([date, photos]) => ({
       date,
       coverUrl: photos.length ? `/api/media/${photos[Math.floor(Math.random() * photos.length)]}` : null,
-    }));
+    })).sort((left, right) => right.date.localeCompare(left.date));
+  }
+
+  /** Every published photo and message of a month, for the recap slideshow. */
+  async monthRecap(userId: string, month: string) {
+    const member = await this.couples.requireCouple(userId);
+    const timezone = await this.timezoneOf(member.coupleId);
+    const [year, monthNumber] = month.split('-').map(Number);
+    const first = `${month}-01`;
+    const last = new Date(Date.UTC(year, monthNumber, 0)).toISOString().slice(0, 10);
+    const stories = await this.prisma.dailyStory.findMany({
+      where: { coupleId: member.coupleId, status: 'PUBLISHED', date: { gte: parseDay(shiftDay(first, -1)), lte: parseDay(shiftDay(last, 1)) } },
+      include: {
+        author: { select: { id: true, displayName: true, chatNickname: true, chatIcon: true } },
+        entries: { orderBy: { createdAt: 'asc' }, include: { media: { select: { id: true, mimeType: true } }, reactions: { select: { userId: true } } } },
+        comments: { select: { authorId: true } },
+      },
+    });
+    const photos: { id: string; url: string; date: string; createdAt: string; authorId: string; caption: string }[] = [];
+    const days = new Set<string>();
+    const people = new Map<string, { id: string; name: string; icon: string; messages: number; photos: number; replies: number; reactions: number }>();
+    const person = (author: { id: string; displayName: string; chatNickname: string | null; chatIcon: string }) => {
+      if (!people.has(author.id)) people.set(author.id, { id: author.id, name: author.chatNickname?.trim() || author.displayName, icon: author.chatIcon, messages: 0, photos: 0, replies: 0, reactions: 0 });
+      return people.get(author.id)!;
+    };
+    for (const story of stories) {
+      const storyDay = story.date.toISOString().slice(0, 10);
+      const stats = person(story.author);
+      let inMonth = false;
+      for (const entry of story.entries) {
+        // Count each entry once, under the day it was filed (or its overlap day when filed just outside the month).
+        const date = [...entryDays(storyDay, entry.createdAt, timezone)].sort().find((candidate) => candidate.startsWith(month));
+        if (!date) continue;
+        inMonth = true;
+        days.add(date);
+        if (entry.content.trim()) stats.messages += 1;
+        for (const item of entry.media) {
+          if (!item.mimeType.startsWith('image/')) continue;
+          stats.photos += 1;
+          photos.push({ id: item.id, url: `/api/media/${item.id}`, date, createdAt: entry.createdAt.toISOString(), authorId: story.author.id, caption: entry.content.trim().slice(0, 140) });
+        }
+        for (const reaction of entry.reactions) {
+          const reactor = people.get(reaction.userId);
+          if (reactor) reactor.reactions += 1;
+        }
+      }
+      if (!inMonth) continue;
+      for (const comment of story.comments) {
+        const commenter = people.get(comment.authorId);
+        if (commenter) commenter.replies += 1;
+      }
+    }
+    photos.sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+    return { month, days: days.size, photos, people: Array.from(people.values()) };
   }
 
   async listForDay(userId: string, day: string) {
     const member = await this.couples.requireCouple(userId);
     const date = parseDay(day);
+    const timezone = await this.timezoneOf(member.coupleId);
     const stories = await this.prisma.dailyStory.findMany({
-      where: { coupleId: member.coupleId, date, OR: [{ status: 'PUBLISHED' }, { status: 'DRAFT', authorId: userId }] },
+      where: { coupleId: member.coupleId, date: { gte: parseDay(shiftDay(day, -1)), lte: parseDay(shiftDay(day, 1)) }, OR: [{ status: 'PUBLISHED' }, { status: 'DRAFT', authorId: userId }] },
       include: {
         author: { select: { id: true, displayName: true, bio: true, chatNickname: true, chatIcon: true, avatarMediaId: true } },
         entries: { orderBy: { createdAt: 'asc' }, include: { media: true, reactions: { select: { userId: true, emoji: true } } } },
@@ -54,26 +114,29 @@ export class StoriesService {
       },
       orderBy: { createdAt: 'asc' },
     });
-    return stories.map((story) => ({
-      id: story.id,
-      date: day,
-      status: story.status,
-      author: this.profile(story.author),
-      entries: story.entries.map((entry) => ({
-        id: entry.id,
-        content: entry.content,
-        createdAt: entry.createdAt.toISOString(),
-        media: entry.media.map((item) => ({ id: item.id, url: `/api/media/${item.id}`, mimeType: item.mimeType })),
-        reactions: this.presentReactions(entry.reactions, userId),
-      })),
-      comments: story.comments.map((comment) => ({
-        id: comment.id,
-        content: comment.content,
-        createdAt: comment.createdAt.toISOString(),
-        author: this.profile(comment.author),
-        replies: comment.replies.map((reply) => ({ id: reply.id, content: reply.content, createdAt: reply.createdAt.toISOString(), author: this.profile(reply.author), replies: [] })),
-      })),
-    }));
+    return stories
+      .map((story) => ({ ...story, entries: this.entriesOnDay(story.date, story.entries, day, timezone) }))
+      .filter((story) => story.date.getTime() === date.getTime() || story.entries.length > 0)
+      .map((story) => ({
+        id: story.id,
+        date: story.date.toISOString().slice(0, 10),
+        status: story.status,
+        author: this.profile(story.author),
+        entries: story.entries.map((entry) => ({
+          id: entry.id,
+          content: entry.content,
+          createdAt: entry.createdAt.toISOString(),
+          media: entry.media.map((item) => ({ id: item.id, url: `/api/media/${item.id}`, mimeType: item.mimeType })),
+          reactions: this.presentReactions(entry.reactions, userId),
+        })),
+        comments: story.comments.map((comment) => ({
+          id: comment.id,
+          content: comment.content,
+          createdAt: comment.createdAt.toISOString(),
+          author: this.profile(comment.author),
+          replies: comment.replies.map((reply) => ({ id: reply.id, content: reply.content, createdAt: reply.createdAt.toISOString(), author: this.profile(reply.author), replies: [] })),
+        })),
+      }));
   }
 
   async create(userId: string, dateText: string, content: string | undefined, files: Express.Multer.File[], requestedStatus: 'DRAFT' | 'PUBLISHED' = 'PUBLISHED') {
@@ -229,12 +292,28 @@ export class StoriesService {
     return (await this.listForDay(userId, date)).find((item) => item.id === story.id);
   }
 
+  /** Published stories of a day, each trimmed to the entries inside that day's 27-hour window. */
   async sourcesForDay(coupleId: string, date: Date) {
-    return this.prisma.dailyStory.findMany({
-      where: { coupleId, date, status: 'PUBLISHED' },
+    const day = date.toISOString().slice(0, 10);
+    const timezone = await this.timezoneOf(coupleId);
+    const stories = await this.prisma.dailyStory.findMany({
+      where: { coupleId, date: { gte: parseDay(shiftDay(day, -1)), lte: parseDay(shiftDay(day, 1)) }, status: 'PUBLISHED' },
       include: { author: { select: { id: true, displayName: true } }, entries: { orderBy: { createdAt: 'asc' }, include: { media: { select: { id: true } } } } },
-      orderBy: { createdAt: 'asc' },
+      orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
     });
+    return stories
+      .map((story) => ({ ...story, entries: this.entriesOnDay(story.date, story.entries, day, timezone) }))
+      .filter((story) => story.entries.length > 0);
+  }
+
+  private entriesOnDay<T extends { createdAt: Date }>(storyDate: Date, entries: T[], day: string, timezone: string) {
+    const storyDay = storyDate.toISOString().slice(0, 10);
+    return entries.filter((entry) => entryDays(storyDay, entry.createdAt, timezone).has(day));
+  }
+
+  private async timezoneOf(coupleId: string) {
+    const couple = await this.prisma.couple.findUniqueOrThrow({ where: { id: coupleId }, select: { timezone: true } });
+    return couple.timezone;
   }
 
   private async requireStory(userId: string, storyId: string) {

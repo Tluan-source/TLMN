@@ -2,7 +2,7 @@ import { Body, Controller, Delete, Get, Param, Post, Query, Req, UploadedFiles, 
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { Request } from 'express';
 import { AuthGuard } from '../../shared/auth.guard';
-import { CreateCommentDto, CreateStoryDto, StoryCalendarDto, ToggleReactionDto, UpdateCommentDto } from './stories.dto';
+import { CreateCommentDto, CreateStoryDto, StoryCalendarDto, StoryRecapDto, ToggleReactionDto, UpdateCommentDto } from './stories.dto';
 import { StoriesService } from './stories.service';
 
 @UseGuards(AuthGuard)
@@ -13,6 +13,11 @@ export class StoriesController {
   @Get('stories/calendar')
   calendar(@Req() req: Request, @Query() query: StoryCalendarDto) {
     return this.stories.listCalendar(req.user!.id, query.year);
+  }
+
+  @Get('stories/recap')
+  recap(@Req() req: Request, @Query() query: StoryRecapDto) {
+    return this.stories.monthRecap(req.user!.id, query.month);
   }
 
   @Get('stories')

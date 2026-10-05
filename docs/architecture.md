@@ -16,7 +16,7 @@ Một `Couple` là một workspace, có tối đa hai `CoupleMember`. Tài kho�
 
 ## Câu chuyện, streak và AI
 
-Một người có tối đa một `DailyStory` cho mỗi ngày/workspace; mỗi lần chia sẻ thêm là một `StoryEntry` có timestamp riêng. Ngày nghiệp vụ là `DATE` theo múi giờ workspace, thời gian sự kiện lưu UTC. Một ngày chỉ đủ streak khi cả hai có ít nhất một bài đã đăng chứa chữ hoặc ảnh. Streak tạm giữ trong ngày và chỉ mất sau khi bỏ lỡ trọn ngày.
+Một người có tối đa một `DailyStory` cho mỗi ngày/workspace; mỗi lần chia sẻ thêm là một `StoryEntry` có timestamp riêng. Ngày nghiệp vụ là `DATE` theo múi giờ workspace, thời gian sự kiện lưu UTC. Một ngày kéo dài 27 giờ: từ 00:00 tới 03:00 sáng hôm sau, nên khung 00:00–03:00 thuộc cả hôm trước lẫn hôm nay. `StoryEntry` vẫn lưu dưới ngày đã chọn khi gửi; khi đọc một ngày (chat, bảng kỷ niệm, streak, tóm tắt), các entry của ngày liền kề được viết trong khung 27 giờ của ngày đó cũng được tính (`entryDays` trong `apps/api/src/shared/dates.ts`). Trước 03:00, "Hôm nay" vẫn mở cuộc trò chuyện của hôm trước. Một ngày chỉ đủ streak khi cả hai có ít nhất một bài đã đăng chứa chữ hoặc ảnh. Streak tạm giữ trong ngày và chỉ mất sau khi bỏ lỡ trọn ngày.
 
 Tóm tắt lấy văn bản đã đăng của hai tài khoản, theo cùng workspace/ngày. Ảnh, nháp và bình luận không gửi tới LLM. Cache dùng hash tổng nguồn. Sửa bài làm bản cũ stale; xóa bài ẩn/xóa bản tóm tắt chung có liên quan. Quota 5 lần tạo tóm tắt/workspace/ngày được giữ trong PostgreSQL.
 
