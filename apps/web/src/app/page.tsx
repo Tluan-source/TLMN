@@ -14,6 +14,7 @@ import { MonthRecap } from './month-recap';
 import type { Page } from './routes';
 import { pathForRoute, routeFromPath } from './routes';
 import { shrinkImage } from './shrink-image';
+import { StreakHeart, StreakHeartBurst } from './streak-heart';
 import type { ViewedPhoto } from './shared';
 import { activeDayInVietnam, api, formatDay, formatMonth, prefersReducedMotion, todayInVietnam, useModal, vietnamDayOf } from './shared';
 
@@ -44,30 +45,6 @@ function chatLabel(user: UserProfile) {
   return user.chatNickname?.trim() || user.displayName;
 }
 
-function StreakHeart({ progress }: { progress: number }) {
-  const heartPath = 'M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z';
-  // The pointed tip hides very small fills behind the outline at icon size.
-  const visibleProgress = progress > 0 ? Math.max(progress, 10) : 0;
-  const waterline = visibleProgress <= 50
-    ? 21 - 10 * Math.sqrt(visibleProgress / 50)
-    : 11 - 9 * (visibleProgress - 50) / 50;
-
-  return <svg className="streak-heart" viewBox="0 0 24 24" aria-hidden="true">
-    <defs><clipPath id="streak-heart-clip"><path d={heartPath} /></clipPath></defs>
-    <path d={heartPath} fill="#fff0f6" />
-    {progress > 0 && <g clipPath="url(#streak-heart-clip)">
-      {progress >= 100 ? <path d={heartPath} fill="#db2777" /> : <>
-        <rect x="0" y={waterline + 0.7} width="24" height="24" fill="#db2777" />
-        <g transform={`translate(0 ${waterline})`}>
-          <path className="heart-water-back" d="M-24 0 Q-18 -1.5 -12 0 T0 0 T12 0 T24 0 T36 0 T48 0 V26 H-24Z" />
-          <path className="heart-water-front" d="M-24 0.3 Q-18 1.8 -12 0.3 T0 0.3 T12 0.3 T24 0.3 T36 0.3 T48 0.3 V26 H-24Z" />
-        </g>
-      </>}
-    </g>}
-    <path d={heartPath} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
-  </svg>;
-}
-
 export default function Home() {
   const [account, setAccount] = useState<Account | null>(null);
   const [workspace, setWorkspace] = useState<CoupleWorkspace | null>(null);
@@ -83,6 +60,7 @@ export default function Home() {
   const [calendarLoading, setCalendarLoading] = useState(false);
   const [stories, setStories] = useState<DailyStory[]>([]);
   const [streak, setStreak] = useState<StreakStatus | null>(null);
+  const [heartOrigin, setHeartOrigin] = useState<DOMRect | null>(null);
   const [summary, setSummary] = useState<SummaryState | null>(null);
   const [summaryBusy, setSummaryBusy] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
@@ -619,7 +597,8 @@ export default function Home() {
             <button className={`nav-button ${page === 'calendar' || page === 'board' ? 'active' : ''}`} type="button" aria-current={page === 'calendar' ? 'page' : undefined} onClick={() => navigate('calendar')}><CalendarDays size={17} /> Kỷ niệm</button>
           </nav>
           {/* The streak details live in the heart's label/tooltip so the row stays one line. */}
-          <span className="heart-badge nav-heart" role="img" aria-label={streakLabel} title={streakLabel}><StreakHeart progress={streakProgress} /></span>
+          <button className="heart-badge nav-heart" type="button" aria-label={`${streakLabel}. Bấm để xem`} title={streakLabel} aria-haspopup="dialog" onClick={(event) => setHeartOrigin(event.currentTarget.querySelector('svg')?.getBoundingClientRect() ?? event.currentTarget.getBoundingClientRect())}><StreakHeart progress={streakProgress} /></button>
+          {heartOrigin && <StreakHeartBurst streak={streak} progress={streakProgress} origin={heartOrigin} onClose={() => setHeartOrigin(null)} />}
         </div>
       </div>
 
