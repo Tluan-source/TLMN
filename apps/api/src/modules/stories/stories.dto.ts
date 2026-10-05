@@ -10,6 +10,12 @@ export class StoryCalendarDto {
   year!: number;
 }
 
+export class StoryRecapDto {
+  @IsString()
+  @Matches(/^(20\d{2}|2100)-(0[1-9]|1[0-2])$/)
+  month!: string;
+}
+
 export class CreateStoryDto {
   @IsString()
   @Matches(/^\d{4}-\d{2}-\d{2}$/)

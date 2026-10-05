@@ -1,27 +1,22 @@
 'use client';
 
-import { ChangeEvent, FormEvent, RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
 import {
-  Bell, Bookmark, CalendarDays, Camera, Check, ChevronLeft, ChevronRight, Heart, House, LockKeyhole,
-  HeartCrack, ImagePlus, LogOut, MessageCircle, RotateCcw, Search, Send, Settings2, SmilePlus, Sparkles, Square, Trash2, UsersRound, Video, X, ZoomIn, ZoomOut,
+  ArrowDown, Bell, Bookmark, CalendarDays, Camera, Check, ChevronLeft, ChevronRight, Heart, House, LockKeyhole,
+  HeartCrack, ImagePlus, LogOut, MessageCircle, Play, RotateCcw, Search, Send, Settings2, SmilePlus, Sparkles, Square, Trash2, UsersRound, Video, X, ZoomIn, ZoomOut,
 } from 'lucide-react';
 import { CHAT_ICONS, MESSAGE_REACTIONS } from '@chuyen/contracts';
 import type { AnniversaryItem, AnniversarySuggestion, CalendarMemory, CommentItem, CoupleWorkspace, DailyStory, Gender, MessageReaction, ReminderItem, StreakStatus, UserProfile } from '@chuyen/contracts';
+import { MemoryBoard } from './memory-board';
+import { MonthRecap } from './month-recap';
+import type { ViewedPhoto } from './shared';
+import { activeDayInVietnam, api, formatDay, formatMonth, prefersReducedMotion, todayInVietnam, useModal, vietnamDayOf } from './shared';
 
 type Account = UserProfile & { email: string };
 type SummaryState = { summary: string | null; sourceHash?: string; updatedAt?: string; stale?: boolean; canCreate?: boolean };
-type ViewedPhoto = { url: string; alt: string };
-type Page = 'home' | 'day' | 'calendar' | 'profile';
+type Page = 'home' | 'day' | 'board' | 'calendar' | 'profile';
 const MAX_VIDEO_SECONDS = 7;
-
-async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`/api${path}`, { credentials: 'same-origin', ...init });
-  const contentType = response.headers.get('content-type') || '';
-  const payload = contentType.includes('application/json') ? await response.json() : null;
-  if (!response.ok) throw new Error(payload?.message || `Có lỗi xảy ra (${response.status}).`);
-  return payload as T;
-}
 
 // Phone camera photos are often 3–10 MB; shrink them before upload so sending stays fast on mobile data.
 async function shrinkImage(file: File, maxSide = 2048, quality = 0.85): Promise<File> {
@@ -47,20 +42,6 @@ async function shrinkImage(file: File, maxSide = 2048, quality = 0.85): Promise<
   }
 }
 
-function todayInVietnam() {
-  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
-  return parts;
-}
-
-function formatDay(day: string) {
-  return new Intl.DateTimeFormat('vi-VN', { timeZone: 'UTC', weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' }).format(new Date(`${day}T00:00:00Z`));
-}
-
-function formatMonth(month: string) {
-  const [year, monthNumber] = month.split('-').map(Number);
-  return new Intl.DateTimeFormat('vi-VN', { timeZone: 'UTC', month: 'long', year: 'numeric' }).format(new Date(Date.UTC(year, monthNumber - 1, 1)));
-}
-
 function formatReminderTime(value: string, timezone: string) {
   return new Intl.DateTimeFormat('vi-VN', { timeZone: timezone, weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(value));
 }
@@ -82,59 +63,6 @@ function Avatar({ user, className = '' }: { user: Pick<UserProfile, 'displayName
 
 function chatLabel(user: UserProfile) {
   return user.chatNickname?.trim() || user.displayName;
-}
-
-const MODAL_EXIT_MS = 180;
-const FOCUSABLE = 'button:not(:disabled), [href], input:not(:disabled):not([type="hidden"]), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])';
-
-function prefersReducedMotion() {
-  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-}
-
-/**
- * Shared modal behaviour: locks page scroll, moves focus inside and keeps Tab there,
- * closes on Escape, gives focus back on close, and lets the exit animation finish first.
- */
-function useModal(onClose: () => void): { panelRef: RefObject<HTMLElement | null>; closing: boolean; close: () => void } {
-  const panelRef = useRef<HTMLElement | null>(null);
-  const [closing, setClosing] = useState(false);
-  const closingRef = useRef(false);
-  const onCloseRef = useRef(onClose);
-  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
-
-  const close = useCallback(() => {
-    if (closingRef.current) return;
-    closingRef.current = true;
-    if (prefersReducedMotion()) { onCloseRef.current(); return; }
-    setClosing(true);
-    window.setTimeout(() => onCloseRef.current(), MODAL_EXIT_MS);
-  }, []);
-
-  useEffect(() => {
-    const panel = panelRef.current;
-    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    panel?.focus({ preventScroll: true });
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') { event.preventDefault(); close(); return; }
-      if (event.key !== 'Tab' || !panel) return;
-      const focusable = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE)).filter((element) => element.getClientRects().length > 0);
-      if (focusable.length === 0) { event.preventDefault(); return; }
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (event.shiftKey && (document.activeElement === first || document.activeElement === panel)) { event.preventDefault(); last.focus(); }
-      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener('keydown', onKeyDown);
-      previousFocus?.focus({ preventScroll: true });
-    };
-  }, [close]);
-
-  return { panelRef, closing, close };
 }
 
 function StreakHeart({ progress }: { progress: number }) {
@@ -166,7 +94,10 @@ export default function Home() {
   const [workspace, setWorkspace] = useState<CoupleWorkspace | null>(null);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState<Page>('home');
-  const [day, setDay] = useState(todayInVietnam);
+  const [day, setDay] = useState(activeDayInVietnam);
+  const [recapMonth, setRecapMonth] = useState<string | null>(null);
+  const [showJumpToLatest, setShowJumpToLatest] = useState(false);
+  const [unseenNewMessages, setUnseenNewMessages] = useState(false);
   const [calendarYear, setCalendarYear] = useState(() => Number(todayInVietnam().slice(0, 4)));
   const [calendarDays, setCalendarDays] = useState<CalendarMemory[]>([]);
   const [anniversaries, setAnniversaries] = useState<AnniversaryItem[]>([]);
@@ -329,7 +260,8 @@ export default function Home() {
       },
     });
     socket.on('chat:changed', ({ date }: { date: string }) => {
-      if (date === dayRef.current) void loadDay(date);
+      // A day's view also shows the neighbouring days' 00:00–03:00 messages.
+      if (Math.abs(Date.parse(date.slice(0, 10)) - Date.parse(dayRef.current)) <= 86_400_000) void loadDay(dayRef.current);
       if (pageRef.current === 'calendar' && Number(date.slice(0, 4)) === calendarYearRef.current) {
         void loadCalendar(calendarYearRef.current);
       }
@@ -360,12 +292,14 @@ export default function Home() {
     const previous = scrolledTimelineRef.current;
     scrolledTimelineRef.current = { key, count: timeline.length };
     if (previous.key !== key) {
+      setShowJumpToLatest(false);
+      setUnseenNewMessages(false);
       const frame = window.requestAnimationFrame(() => surface.scrollTo({ top: surface.scrollHeight }));
       return () => window.cancelAnimationFrame(frame);
     }
     if (timeline.length <= previous.count) return;
     const nearBottom = surface.scrollHeight - surface.scrollTop - surface.clientHeight < 160;
-    if (!nearBottom && lastTimelineItem?.story.author.id !== account?.id) return;
+    if (!nearBottom && lastTimelineItem?.story.author.id !== account?.id) { setUnseenNewMessages(true); return; }
     const frame = window.requestAnimationFrame(() => surface.scrollTo({ top: surface.scrollHeight, behavior: prefersReducedMotion() ? 'auto' : 'smooth' }));
     return () => window.cancelAnimationFrame(frame);
   }, [timeline.length, lastTimelineItem, dayReady, page, day, account?.id]);
@@ -377,6 +311,31 @@ export default function Home() {
     input.style.height = 'auto';
     input.style.height = `${Math.min(input.scrollHeight + 2, 120)}px`;
   }, [content]);
+
+  // At 03:00 the previous day closes; move the home view on to the new day.
+  useEffect(() => {
+    if (page !== 'home') return;
+    const timer = window.setInterval(() => {
+      const current = activeDayInVietnam();
+      if (dayRef.current !== current) setDay(current);
+    }, 60_000);
+    return () => window.clearInterval(timer);
+  }, [page]);
+
+  const chatScrolled = () => {
+    const surface = chatSurfaceRef.current;
+    if (!surface) return;
+    const distance = surface.scrollHeight - surface.scrollTop - surface.clientHeight;
+    setShowJumpToLatest(distance > 320);
+    if (distance < 160) setUnseenNewMessages(false);
+  };
+
+  const jumpToLatest = () => {
+    const surface = chatSurfaceRef.current;
+    if (!surface) return;
+    surface.scrollTo({ top: surface.scrollHeight, behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
+    setUnseenNewMessages(false);
+  };
 
   const visibleTimeline = useMemo(() => {
     const query = chatSearch.trim().toLocaleLowerCase('vi');
@@ -636,7 +595,7 @@ export default function Home() {
   if (!workspace) return <WorkspaceStart account={account} inviteEntry={inviteEntry} setInviteEntry={setInviteEntry} busy={busy} toast={toast} onCreate={createWorkspace} onAccept={acceptInvitation} onLogout={logout} />;
 
   return (
-    <main className={`shell ${page === 'home' && day === todayInVietnam() ? 'has-chat-composer' : ''}`}>
+    <main className={`shell ${page === 'home' && day === activeDayInVietnam() ? 'has-chat-composer' : ''}`}>
       {toast && <div className="toast" role="status" key={toast}>{toast}</div>}
       <div className="sticky-header">
         <header className="topbar">
@@ -648,9 +607,9 @@ export default function Home() {
         </header>
 
         <div className="nav-row">
-          <nav className="top-nav" data-active={page === 'home' || page === 'calendar' ? page : 'none'} aria-label="Điều hướng chính">
-            <button className={`nav-button ${page === 'home' ? 'active' : ''}`} type="button" aria-current={page === 'home' ? 'page' : undefined} onClick={() => { setDay(todayInVietnam()); setPage('home'); }}><House size={17} /> Hôm nay</button>
-            <button className={`nav-button ${page === 'calendar' ? 'active' : ''}`} type="button" aria-current={page === 'calendar' ? 'page' : undefined} onClick={() => setPage('calendar')}><CalendarDays size={17} /> Kỷ niệm</button>
+          <nav className="top-nav" data-active={page === 'home' || page === 'calendar' ? page : page === 'board' ? 'calendar' : 'none'} aria-label="Điều hướng chính">
+            <button className={`nav-button ${page === 'home' ? 'active' : ''}`} type="button" aria-current={page === 'home' ? 'page' : undefined} onClick={() => { setDay(activeDayInVietnam()); setPage('home'); }}><House size={17} /> Hôm nay</button>
+            <button className={`nav-button ${page === 'calendar' || page === 'board' ? 'active' : ''}`} type="button" aria-current={page === 'calendar' ? 'page' : undefined} onClick={() => setPage('calendar')}><CalendarDays size={17} /> Kỷ niệm</button>
           </nav>
           {/* The streak details live in the heart's label/tooltip so the row stays one line. */}
           <span className="heart-badge nav-heart" role="img" aria-label={streakLabel} title={streakLabel}><StreakHeart progress={streakProgress} /></span>
@@ -659,7 +618,7 @@ export default function Home() {
 
         {(page === 'home' || page === 'day') && <>
 
-        {page === 'day' && <div className="date-row"><h2>{day === todayInVietnam() ? 'Hôm nay' : 'Ngày mình cùng nhớ'}</h2><div className="date-controls"><button className="icon-button" type="button" title="Quay lại Kỷ niệm" aria-label="Quay lại Kỷ niệm" onClick={() => setPage('calendar')}><ChevronLeft size={18} /></button><input className="date-picker" type="date" aria-label="Chọn ngày câu chuyện" max={todayInVietnam()} value={day} onChange={(event) => { const nextDay = event.target.value; setDay(nextDay); setPage(nextDay === todayInVietnam() ? 'home' : 'day'); }} /></div></div>}
+        {page === 'day' && <div className="date-row"><h2>{day === activeDayInVietnam() ? 'Hôm nay' : 'Ngày mình cùng nhớ'}</h2><div className="date-controls"><button className="icon-button" type="button" title="Quay lại Kỷ niệm" aria-label="Quay lại Kỷ niệm" onClick={() => setPage('calendar')}><ChevronLeft size={18} /></button><input className="date-picker" type="date" aria-label="Chọn ngày câu chuyện" max={todayInVietnam()} value={day} onChange={(event) => { const nextDay = event.target.value; setDay(nextDay); setPage(nextDay === activeDayInVietnam() ? 'home' : 'day'); }} /></div></div>}
         </>}
 
       {(page === 'home' || page === 'day') && <>
@@ -672,14 +631,15 @@ export default function Home() {
             </div>
           </header>
           <div className="chat-panel-body">
-            <div ref={chatSurfaceRef} className="chat-surface" style={{ backgroundColor: workspace.chatBackground || '#fff7fb', backgroundImage: workspace.chatBackgroundImageUrl ? `linear-gradient(rgba(255,255,255,.78), rgba(255,255,255,.78)), url("${workspace.chatBackgroundImageUrl}")` : undefined }}>
-              {!dayReady ? <ChatSkeleton /> : chatSearch.trim() && visibleTimeline.length === 0 ? <section className="empty-state chat-empty-state"><Search size={23} /><h3>Không tìm thấy tin nhắn</h3><p>Thử một từ khóa khác trong ngày này nhé.</p></section> : visibleTimeline.length === 0 ? <section className="empty-state chat-empty-state"><Heart size={23} /><h3>Ngày mới, câu chuyện mới</h3><p>{partner ? 'Kể một điều nho nhỏ trong ngày, người ấy sẽ tìm thấy ở đây.' : 'Mời người ấy vào workspace để hai bạn bắt đầu cùng nhau.'}</p></section> : <section className="chat-thread" aria-label="Cuộc trò chuyện trong ngày">{visibleTimeline.map(({ story, entry }, index) => { const previous = visibleTimeline[index - 1]; const continued = previous?.story.author.id === story.author.id; return <StoryCard key={entry.id} story={story} entry={entry} continued={continued} isLastEntry={entry.id === story.entries.at(-1)?.id} accountId={account.id} busy={busy} replyTarget={replyTarget} replyContent={replyContent} setReplyTarget={setReplyTarget} setReplyContent={setReplyContent} onReply={postReply} onReaction={(emoji) => postReaction(story.id, entry.id, emoji)} onRefresh={() => loadDay(day)} notify={notify} onViewPhoto={setViewedPhoto} />; })}</section>}
+            <div ref={chatSurfaceRef} className="chat-surface" onScroll={chatScrolled} style={{ backgroundColor: workspace.chatBackground || '#fff7fb', backgroundImage: workspace.chatBackgroundImageUrl ? `linear-gradient(rgba(255,255,255,.78), rgba(255,255,255,.78)), url("${workspace.chatBackgroundImageUrl}")` : undefined }}>
+              {!dayReady ? <ChatSkeleton /> : chatSearch.trim() && visibleTimeline.length === 0 ? <section className="empty-state chat-empty-state"><Search size={23} /><h3>Không tìm thấy tin nhắn</h3><p>Thử một từ khóa khác trong ngày này nhé.</p></section> : visibleTimeline.length === 0 ? <section className="empty-state chat-empty-state"><Heart size={23} /><h3>Ngày mới, câu chuyện mới</h3><p>{partner ? 'Kể một điều nho nhỏ trong ngày, người ấy sẽ tìm thấy ở đây.' : 'Mời người ấy vào workspace để hai bạn bắt đầu cùng nhau.'}</p></section> : <section className="chat-thread" aria-label="Cuộc trò chuyện trong ngày">{visibleTimeline.map(({ story, entry }, index) => { const previous = visibleTimeline[index - 1]; const continued = previous?.story.author.id === story.author.id; return <StoryCard key={entry.id} viewDay={day} story={story} entry={entry} continued={continued} isLastEntry={entry.id === story.entries.at(-1)?.id} accountId={account.id} busy={busy} replyTarget={replyTarget} replyContent={replyContent} setReplyTarget={setReplyTarget} setReplyContent={setReplyContent} onReply={postReply} onReaction={(emoji) => postReaction(story.id, entry.id, emoji)} onRefresh={() => loadDay(day)} notify={notify} onViewPhoto={setViewedPhoto} />; })}</section>}
             </div>
+            {(showJumpToLatest || unseenNewMessages) && <button className={`jump-latest-fab ${unseenNewMessages ? 'has-new' : ''}`} type="button" onClick={jumpToLatest} aria-label={unseenNewMessages ? 'Có tin nhắn mới, nhảy xuống tin mới nhất' : 'Nhảy xuống tin nhắn mới nhất'} title="Tin nhắn mới nhất"><ArrowDown size={16} />{unseenNewMessages && <span>Tin mới</span>}</button>}
             <button className="summary-chat-fab" type="button" onClick={() => setSummaryOpen(true)} aria-haspopup="dialog" aria-label="Mở tóm tắt AI cho ngày này" title="Tóm tắt AI">
               <Sparkles size={16} /><span>Tóm tắt AI</span>{summary?.summary && <span className="summary-ready-dot" aria-label="Đã có tóm tắt" />}
             </button>
           </div>
-          {page === 'home' && day === todayInVietnam() && <form className="chat-composer" onSubmit={publishStory}>
+          {page === 'home' && day === activeDayInVietnam() && <form className="chat-composer" onSubmit={publishStory}>
             {selectedFiles.length > 0 && <div className="composer-attachments" aria-label={`${selectedFiles.length} tệp đã chọn`}>{selectedFiles.map((file, index) => <PhotoPreview key={`${file.name}-${file.size}-${file.lastModified}-${index}`} file={file} onRemove={() => removeSelectedFile(index)} onUseSuggestion={useImageSuggestion} />)}</div>}
             {recording && <div className="recording-status" role="status"><video ref={recordingPreviewRef} className="recording-preview" muted autoPlay playsInline aria-label="Xem trước camera" /><span className="recording-dot" /> Đang quay {String(recordingSeconds).padStart(2, '0')}s / {MAX_VIDEO_SECONDS}s <button className="recording-stop" type="button" onClick={stopVideoRecording} title="Dừng quay" aria-label="Dừng quay"><Square size={13} fill="currentColor" /></button></div>}
             <div className="composer-row">
@@ -719,10 +679,10 @@ export default function Home() {
             }));
             const memoriesByDate = new Map(memories.map((memory) => [memory.date, memory]));
             return <section className="memory-month" key={month}>
-              <h3>{formatMonth(month)}<span>Sự quan tâm đã kéo dài {memories.length} ngày</span></h3>
+              <header className="memory-month-heading"><h3>{formatMonth(month)}<span>Sự quan tâm đã kéo dài {memories.length} ngày</span></h3>{memories.some((memory) => memory.coverUrl) && <button className="button button-soft recap-button" type="button" onClick={() => setRecapMonth(month)}><Play size={14} fill="currentColor" /> Xem lại tháng</button>}</header>
               <div className="memory-weeks" aria-label={`Các tuần của ${formatMonth(month)}`}>
                 {weeks.map((week, weekIndex) => <div className="memory-week" key={`${month}-week-${weekIndex}`}>
-                  {week.map((date, weekdayIndex) => date ? <MemoryTile key={date} date={date} memory={memoriesByDate.get(date) || null} anniversaries={anniversariesByDate.get(date) || []} onOpen={() => { setDay(date); setPage('day'); window.scrollTo({ top: 0, behavior: 'smooth' }); }} /> : <span className="memory-week-empty" key={`${month}-empty-${weekIndex}-${weekdayIndex}`} aria-hidden="true" />)}
+                  {week.map((date, weekdayIndex) => date ? <MemoryTile key={date} date={date} memory={memoriesByDate.get(date) || null} anniversaries={anniversariesByDate.get(date) || []} onOpen={() => { setDay(date); setPage('board'); window.scrollTo({ top: 0, behavior: 'smooth' }); }} /> : <span className="memory-week-empty" key={`${month}-empty-${weekIndex}-${weekdayIndex}`} aria-hidden="true" />)}
                 </div>)}
               </div>
             </section>;
@@ -730,10 +690,13 @@ export default function Home() {
         </div>}
       </section>}
 
+      {page === 'board' && <MemoryBoard day={day} stories={stories} ready={dayReady} anniversaries={anniversariesByDate.get(day) || []} onBack={() => setPage('calendar')} onOpenChat={() => setPage(day === activeDayInVietnam() ? 'home' : 'day')} onViewPhoto={setViewedPhoto} />}
+
       {page === 'profile' && <ProfilePage account={account} workspace={workspace} partner={partner} busy={busy} inviteUrl={inviteUrl} reminderRevision={reminderRevision} onInvite={createInvitation} notify={notify} onAccount={setAccount} onWorkspace={reloadWorkspace} />}
 
       {viewedPhoto && <PhotoLightbox key={viewedPhoto.url} photo={viewedPhoto} onClose={closePhoto} />}
       {chatSettingsOpen && <ChatSettingsDialog account={account} workspace={workspace} notify={notify} onAccount={setAccount} onWorkspace={reloadWorkspace} onClose={() => setChatSettingsOpen(false)} />}
+      {recapMonth && <MonthRecap month={recapMonth} onClose={() => setRecapMonth(null)} />}
       {summaryOpen && <SummaryDialog date={day} summary={summary} busy={summaryBusy} canCreate={canCreateSummary} onCreate={makeSummary} onClose={() => setSummaryOpen(false)} />}
 
     </main>
@@ -1008,8 +971,8 @@ function PhotoPreview({ file, onRemove, onUseSuggestion }: { file: File; onRemov
   </div>;
 }
 
-function StoryCard({ story, entry, continued, isLastEntry, accountId, busy, replyTarget, replyContent, setReplyTarget, setReplyContent, onRefresh, notify, onReply, onReaction, onViewPhoto }: {
-  story: DailyStory; entry: DailyStory['entries'][number]; continued: boolean; isLastEntry: boolean; accountId: string; busy: boolean; replyTarget: string | null; replyContent: string;
+function StoryCard({ viewDay, story, entry, continued, isLastEntry, accountId, busy, replyTarget, replyContent, setReplyTarget, setReplyContent, onRefresh, notify, onReply, onReaction, onViewPhoto }: {
+  viewDay: string; story: DailyStory; entry: DailyStory['entries'][number]; continued: boolean; isLastEntry: boolean; accountId: string; busy: boolean; replyTarget: string | null; replyContent: string;
   setReplyTarget: (value: string | null) => void; setReplyContent: (value: string) => void;
   onRefresh: () => Promise<void>; notify: (message: string) => void; onReaction: (emoji: string) => Promise<void>;
   onReply: (event: FormEvent<HTMLFormElement>, storyId: string, parentId?: string) => void;
@@ -1029,7 +992,9 @@ function StoryCard({ story, entry, continued, isLastEntry, accountId, busy, repl
     catch (error) { notify(error instanceof Error ? error.message : 'Chưa đăng được bản nháp.'); }
     finally { setSaving(false); }
   };
-  const time = new Intl.DateTimeFormat('vi-VN', { hour: '2-digit', minute: '2-digit' }).format(new Date(entry.createdAt));
+  const clock = new Intl.DateTimeFormat('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit' }).format(new Date(entry.createdAt));
+  // Messages from the 00:00–03:00 tail of the day were sent the next calendar morning.
+  const time = vietnamDayOf(entry.createdAt) > viewDay ? `${clock} · rạng sáng hôm sau` : clock;
   const actions = <>{story.status === 'DRAFT' && isLastEntry && <span className="draft-label">Nháp</span>}{isOwner && isLastEntry && <button className="text-action delete-story" type="button" onClick={() => void removeStory()}>Xóa chuyện</button>}</>;
   // Consecutive messages from the same person skip the avatar/name, like Messenger; the time sits under each bubble.
   return <article className={`chat-message ${isOwner ? 'mine' : 'theirs'} ${continued ? 'continued' : ''}`}>
