@@ -673,7 +673,8 @@ button, label, a { -webkit-tap-highlight-color: transparent; }
 .brand { flex: 1 1 auto; }
 .nav-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .nav-row .top-nav { flex: 1 1 auto; margin: 0; }
-.nav-heart { width: 40px; height: 40px; cursor: help; }
+.nav-heart { width: 40px; height: 40px; padding: 0; border: 0; border-radius: 12px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.nav-heart:active svg { transform: scale(.9); }
 .nav-heart svg { width: 34px; height: 34px; }
 @media (hover: hover) { .nav-heart:hover svg { animation: heartbeat 900ms ease-in-out; } }
 
@@ -839,4 +840,28 @@ button, label, a { -webkit-tap-highlight-color: transparent; }
   .recap-dialog { padding: 12px; }
   .recap-speed { width: 100%; margin-left: 0; justify-content: space-between; }
   .recap-speed button { flex: 1; }
+}
+
+/* Tapping the nav heart: it grows into the middle of the screen and shows this month's streak days. */
+.heart-burst { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: max(24px, env(safe-area-inset-top)) 20px max(24px, env(safe-area-inset-bottom)); background: rgba(255, 247, 250, .985); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); animation: fade-in 260ms ease both; cursor: zoom-out; outline: none; }
+.heart-burst-stage { display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center; }
+.heart-burst-heart { position: relative; width: min(68vw, 300px); aspect-ratio: 1; transform-origin: 50% 50%; animation: heart-grow 640ms var(--ease-spring) both, heartbeat 900ms ease-in-out 700ms; }
+.heart-burst-heart svg { position: relative; width: 100%; height: 100%; overflow: visible; filter: drop-shadow(0 18px 26px rgba(190, 24, 93, .22)); }
+.heart-burst-glow { position: absolute; inset: 6%; border-radius: 50%; background: radial-gradient(circle, rgba(244, 114, 182, .45), rgba(244, 114, 182, 0) 68%); animation: heart-glow 1.6s var(--ease-out) 300ms both; }
+.heart-burst mask * { fill: #fff; }
+.heart-burst-number { font-family: var(--hand); font-weight: 400; animation: fade-in 240ms ease 220ms both; }
+.heart-burst-caption { max-width: 32ch; text-wrap: balance; animation: rise-in var(--dur-slow) var(--ease-out) 420ms both; }
+.heart-burst-title { margin: 0; font-family: var(--hand); font-size: clamp(22px, 6vw, 28px); line-height: 1.2; color: var(--ink); }
+.heart-burst-meta { margin: 6px 0 0; font-size: 14px; line-height: 1.5; color: var(--muted); }
+.heart-burst-close { margin-top: 4px; padding: 8px 20px; border: 1px solid var(--pink-line); border-radius: 999px; background: var(--paper); color: var(--pink-strong); font-size: 14px; font-weight: 600; animation: fade-in 240ms ease 620ms both; }
+.heart-burst.closing { animation: fade-out 200ms ease both; }
+.heart-burst.closing .heart-burst-heart { animation: heart-return 200ms var(--ease-out) both; }
+@keyframes heart-grow {
+  from { transform: translate(var(--from-x, 0), var(--from-y, 0)) scale(var(--from-scale, .2)); }
+  to { transform: none; }
+}
+@keyframes heart-return { to { transform: translate(var(--from-x, 0), var(--from-y, 0)) scale(var(--from-scale, .2)); opacity: .4; } }
+@keyframes heart-glow { 0% { opacity: 0; transform: scale(.6); } 35% { opacity: 1; } 100% { opacity: .55; transform: scale(1.25); } }
+@media (prefers-reduced-motion: reduce) {
+  .heart-burst-heart, .heart-burst-glow, .heart-burst-number, .heart-burst-caption, .heart-burst-close, .heart-burst.closing .heart-burst-heart { animation: none; }
 }
