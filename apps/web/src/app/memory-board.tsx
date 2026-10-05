@@ -74,14 +74,38 @@ function buildColumns(day: string, stories: DailyStory[], anniversaries: Anniver
   return columns;
 }
 
-/** The string sags between the clips that hold it up, like the sketch. */
-function stringPath(points: { x: number; y: number }[]) {
+/**
+ * A hanging rope takes the shape of a catenary, y = a·cosh(x/a). Solve for `a` so the curve
+ * sags `sag` px below the straight line over a span of `span` px.
+ */
+function catenaryParameter(span: number, sag: number) {
+  let low = span / 100;
+  let high = span * 100;
+  for (let step = 0; step < 50; step += 1) {
+    const middle = (low + high) / 2;
+    if (middle * (Math.cosh(span / (2 * middle)) - 1) > sag) low = middle;
+    else high = middle;
+  }
+  return (low + high) / 2;
+}
+
+/** The rope dips under its own weight between every clip, like the sketch: deeper over longer gaps. */
+function ropePath(points: { x: number; y: number }[]) {
   let path = `M ${points[0].x} ${points[0].y}`;
   for (let index = 1; index < points.length; index += 1) {
     const from = points[index - 1];
     const to = points[index];
-    const sag = Math.min(46, (to.x - from.x) * 0.14);
-    path += ` Q ${(from.x + to.x) / 2} ${Math.max(from.y, to.y) + sag} ${to.x} ${to.y}`;
+    const span = to.x - from.x;
+    if (span <= 0) continue;
+    const sag = Math.min(80, span * 0.16);
+    const a = catenaryParameter(span, sag);
+    const lowest = Math.cosh(span / (2 * a));
+    for (let x = 6; x < span; x += 6) {
+      const chord = from.y + ((to.y - from.y) * x) / span;
+      const dip = a * (lowest - Math.cosh((x - span / 2) / a));
+      path += ` L ${(from.x + x).toFixed(1)} ${(chord + dip).toFixed(1)}`;
+    }
+    path += ` L ${to.x} ${to.y}`;
   }
   return path;
 }
@@ -97,11 +121,19 @@ export function MemoryBoard({ day, stories, ready, anniversaries, onBack, onOpen
   const columns = useMemo(() => buildColumns(day, stories, anniversaries), [day, stories, anniversaries]);
   const width = Math.max(columns.length, 1) * SLOT + SIDE * 2;
 
-  const pins = useMemo(() => columns.flatMap((column, index) => column.photo
-    ? [{ key: column.key, x: SIDE + index * SLOT + SLOT / 2, y: 54 + Math.round(seeded(column.key) * 34) }]
-    : []), [columns]);
+  // The whole rope hangs from a nail at each end, so clips near the middle sit lower;
+  // each photo's weight then pulls its clip down a little more.
+  const pins = useMemo(() => {
+    const overallSag = Math.min(64, width * 0.045);
+    return columns.flatMap((column, index) => {
+      if (!column.photo) return [];
+      const x = SIDE + index * SLOT + SLOT / 2;
+      const along = x / width;
+      return [{ key: column.key, x, y: Math.round(STRING_ANCHOR_Y + 22 + overallSag * 4 * along * (1 - along) + seeded(column.key) * 12) }];
+    });
+  }, [columns, width]);
   const pinByKey = useMemo(() => new Map(pins.map((pin) => [pin.key, pin])), [pins]);
-  const path = stringPath([{ x: 0, y: STRING_ANCHOR_Y }, ...pins, { x: width, y: STRING_ANCHOR_Y }]);
+  const path = ropePath([{ x: 10, y: STRING_ANCHOR_Y }, ...pins, { x: width - 10, y: STRING_ANCHOR_Y }]);
 
   const updateEdges = () => {
     const scroller = scrollerRef.current;
@@ -180,9 +212,13 @@ export function MemoryBoard({ day, stories, ready, anniversaries, onBack, onOpen
         {!ready ? <div className="board-empty"><span className="board-note note-white"><span className="board-tape" aria-hidden="true" />Đang ghim ảnh lên bảng…</span></div>
           : columns.length === 0 ? <div className="board-empty"><span className="board-note note-pink"><span className="board-pin" aria-hidden="true" />Ngày này còn trống.<small>Mở cuộc trò chuyện để kể một điều, nó sẽ được ghim ở đây.</small></span></div>
           : <div className="board-track" style={{ width }}>
-            <svg className="board-string" width={width} height="150" viewBox={`0 0 ${width} 150`} aria-hidden="true">
-              <path d={path} className="board-string-shadow" />
-              <path d={path} className="board-string-line" />
+            <svg className="board-string" width={width} height="260" viewBox={`0 0 ${width} 260`} aria-hidden="true">
+              <path d={path} className="rope-shadow" />
+              <path d={path} className="rope-edge" />
+              <path d={path} className="rope-core" />
+              <path d={path} className="rope-twist" />
+              <circle className="rope-nail" cx="10" cy={STRING_ANCHOR_Y} r="5" />
+              <circle className="rope-nail" cx={width - 10} cy={STRING_ANCHOR_Y} r="5" />
             </svg>
             {columns.map((column, index) => {
               const pin = pinByKey.get(column.key);
