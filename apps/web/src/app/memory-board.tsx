@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { CalendarDays, ChevronLeft, ChevronRight, Heart, MessageCircle } from 'lucide-react';
+import { CalendarDays, ChevronLeft, ChevronRight, MessageCircle } from 'lucide-react';
 import type { AnniversaryItem, DailyStory, UserProfile } from '@chuyen/contracts';
 import type { ViewedPhoto } from './shared';
 import { formatDay, prefersReducedMotion, vietnamDayOf } from './shared';
@@ -29,7 +29,7 @@ function authorLabel(user: UserProfile) {
 
 function clock(value: string, viewDay: string) {
   const time = new Intl.DateTimeFormat('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit' }).format(new Date(value));
-  return vietnamDayOf(value) > viewDay ? `${time} · rạng sáng` : time;
+  return vietnamDayOf(value) > viewDay ? `${time} rạng sáng` : time;
 }
 
 /** One column per photo; a message is pinned under the first photo it came with, or gets its own column. */
@@ -159,7 +159,7 @@ export function MemoryBoard({ day, stories, ready, anniversaries, onBack, onOpen
   return <section className="board-view" aria-labelledby="board-title">
     <header className="board-toolbar">
       <button className="icon-button" type="button" title="Quay lại Kỷ niệm" aria-label="Quay lại Kỷ niệm" onClick={onBack}><ChevronLeft size={18} /></button>
-      <div className="board-title"><p className="section-kicker"><CalendarDays size={15} /> Bảng kỷ niệm</p><h2 id="board-title">{formatDay(day)}</h2><span>{ready ? `${photoCount} ảnh · ${noteCount} lời nhắn` : 'Đang ghim lên bảng…'}</span></div>
+      <div className="board-title"><h2 id="board-title">{formatDay(day)}</h2><p>{!ready ? 'Đang ghim lên bảng…' : columns.length === 0 ? 'Chưa có gì được ghim' : `${photoCount} tấm ảnh và ${noteCount} mẩu giấy`}</p></div>
       <button className="button button-soft board-chat-button" type="button" onClick={onOpenChat}><MessageCircle size={15} /> Trò chuyện</button>
     </header>
 
@@ -178,7 +178,7 @@ export function MemoryBoard({ day, stories, ready, anniversaries, onBack, onOpen
         onClickCapture={(event) => { if (suppressClickRef.current) { event.stopPropagation(); event.preventDefault(); suppressClickRef.current = false; } }}
       >
         {!ready ? <div className="board-empty"><span className="board-note note-white"><span className="board-tape" aria-hidden="true" />Đang ghim ảnh lên bảng…</span></div>
-          : columns.length === 0 ? <div className="board-empty"><span className="board-note note-pink"><span className="board-pin" aria-hidden="true" /><Heart size={18} fill="currentColor" /> Ngày này chưa có ảnh hay lời nhắn nào để ghim.</span></div>
+          : columns.length === 0 ? <div className="board-empty"><span className="board-note note-pink"><span className="board-pin" aria-hidden="true" />Ngày này còn trống.<small>Mở cuộc trò chuyện để kể một điều, nó sẽ được ghim ở đây.</small></span></div>
           : <div className="board-track" style={{ width }}>
             <svg className="board-string" width={width} height="150" viewBox={`0 0 ${width} 150`} aria-hidden="true">
               <path d={path} className="board-string-shadow" />
@@ -194,7 +194,7 @@ export function MemoryBoard({ day, stories, ready, anniversaries, onBack, onOpen
                     {column.photo.isVideo
                       ? <video src={column.photo.url} muted playsInline loop preload="metadata" controls aria-label={`Video của ${authorLabel(column.photo.author)}`} />
                       : <button type="button" className="board-photo-open" aria-label={`Mở ảnh của ${authorLabel(column.photo.author)} lúc ${column.photo.time}`} onClick={() => onViewPhoto({ url: column.photo!.url, alt: `Ảnh của ${authorLabel(column.photo!.author)}` })}><img src={column.photo.url} alt="" loading="lazy" draggable={false} /></button>}
-                    <figcaption><span aria-hidden="true">{column.photo.author.chatIcon || '💗'}</span> {column.photo.time}</figcaption>
+                    <figcaption>{authorLabel(column.photo.author)}, {column.photo.time}</figcaption>
                   </figure>}
                 </div>
                 <div className="board-notes">
@@ -205,7 +205,7 @@ export function MemoryBoard({ day, stories, ready, anniversaries, onBack, onOpen
                     return <article className={`board-note ${color} ${note.kind === 'comment' ? 'board-note-small' : ''}`} key={note.id} style={{ transform: `rotate(${rotate.toFixed(1)}deg)` }}>
                       {fastener}
                       {note.kind === 'anniversary' ? <p className="board-note-title"><CalendarDays size={13} /> {note.text}</p> : <p>{note.text}</p>}
-                      {note.author && <footer><span aria-hidden="true">{note.author.chatIcon || '💗'}</span> {authorLabel(note.author)}{note.time ? ` · ${note.time}` : ''}</footer>}
+                      {note.author && <footer>{authorLabel(note.author)}, {note.time} <span aria-hidden="true">{note.author.chatIcon || '💗'}</span></footer>}
                     </article>;
                   })}
                 </div>
@@ -216,6 +216,5 @@ export function MemoryBoard({ day, stories, ready, anniversaries, onBack, onOpen
       {!edges.start && <button className="board-scroll board-scroll-start" type="button" aria-label="Xem phần trước" onClick={() => scrollByPage(-1)}><ChevronLeft size={18} /></button>}
       {!edges.end && <button className="board-scroll board-scroll-end" type="button" aria-label="Xem tiếp" onClick={() => scrollByPage(1)}><ChevronRight size={18} /></button>}
     </div>
-    <div className="board-pin-tray" aria-hidden="true"><span /><span /><span /><span /><span /></div>
   </section>;
 }

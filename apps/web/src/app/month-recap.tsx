@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Download, Pause, Play, RotateCcw, Sparkles, X } from 'lucide-react';
+import { Download, Pause, Play, RotateCcw, X } from 'lucide-react';
 import { api, formatMonth, prefersReducedMotion, useModal } from './shared';
 
 type RecapPhoto = { id: string; url: string; date: string; createdAt: string; authorId: string; caption: string };
@@ -56,36 +56,96 @@ function wrapText(context: CanvasRenderingContext2D, text: string, maxWidth: num
   return lines;
 }
 
-function drawCard(context: CanvasRenderingContext2D, recap: Recap, kind: 'intro' | 'outro', progress: number) {
-  const gradient = context.createLinearGradient(0, 0, WIDTH, HEIGHT);
-  gradient.addColorStop(0, '#fce7f3');
-  gradient.addColorStop(1, '#f9a8d4');
-  context.fillStyle = gradient;
+const HAND = '"Pangolin", "Be Vietnam Pro", cursive';
+const UI = '"Be Vietnam Pro", system-ui, sans-serif';
+let corkCache: HTMLCanvasElement | null = null;
+
+/** The same cork-and-wood board as the day view, drawn once and reused for every title frame. */
+function corkBoard() {
+  if (corkCache) return corkCache;
+  const canvas = document.createElement('canvas');
+  canvas.width = WIDTH;
+  canvas.height = HEIGHT;
+  const context = canvas.getContext('2d')!;
+  const wood = context.createLinearGradient(0, 0, 0, HEIGHT);
+  wood.addColorStop(0, '#ecd3a6');
+  wood.addColorStop(1, '#d9b27c');
+  context.fillStyle = wood;
   context.fillRect(0, 0, WIDTH, HEIGHT);
-  context.globalAlpha = Math.min(1, progress * 3);
+  context.fillStyle = '#c6925a';
+  context.fillRect(28, 28, WIDTH - 56, HEIGHT - 56);
+  let seed = 7;
+  const random = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+  for (let index = 0; index < 9000; index += 1) {
+    context.fillStyle = random() > 0.45 ? 'rgba(92, 52, 18, .32)' : 'rgba(255, 226, 180, .3)';
+    context.beginPath();
+    context.arc(28 + random() * (WIDTH - 56), 28 + random() * (HEIGHT - 56), 0.6 + random() * 1.4, 0, Math.PI * 2);
+    context.fill();
+  }
+  context.strokeStyle = 'rgba(70, 38, 12, .45)';
+  context.lineWidth = 3;
+  context.strokeRect(28, 28, WIDTH - 56, HEIGHT - 56);
+  corkCache = canvas;
+  return canvas;
+}
+
+function personLine(person: RecapPerson) {
+  const parts = [
+    person.messages && `kể ${person.messages} lần`,
+    person.photos && `gửi ${person.photos} tấm ảnh`,
+    person.replies && `nhắn ${person.replies} lời`,
+    person.reactions && `thả tim ${person.reactions} lần`,
+  ].filter(Boolean) as string[];
+  if (!parts.length) return `${person.name} lặng lẽ đọc hết`;
+  return `${person.name} ${parts.length > 1 ? `${parts.slice(0, -1).join(', ')} và ${parts.at(-1)}` : parts[0]}`;
+}
+
+function drawCard(context: CanvasRenderingContext2D, recap: Recap, kind: 'intro' | 'outro', progress: number) {
+  context.drawImage(corkBoard(), 0, 0);
+  // The note drops onto the board and settles, like being pinned by hand.
+  const settle = Math.min(1, progress * 4);
+  const eased = 1 - (1 - settle) ** 3;
+  const noteWidth = 560;
+  const noteHeight = kind === 'intro' ? 330 : 170 + recap.people.length * 92;
+  context.save();
+  context.translate(WIDTH / 2, HEIGHT / 2 - 20 * (1 - eased));
+  context.rotate(((kind === 'intro' ? -2.5 : 2) * Math.PI) / 180);
+  context.globalAlpha = eased;
+  context.shadowColor = 'rgba(55, 30, 10, .35)';
+  context.shadowBlur = 22;
+  context.shadowOffsetY = 10;
+  context.fillStyle = kind === 'intro' ? '#fffdf8' : '#f9d3df';
+  context.fillRect(-noteWidth / 2, -noteHeight / 2, noteWidth, noteHeight);
+  context.shadowColor = 'transparent';
+  // Washi tape across the top edge.
+  context.save();
+  context.rotate((-4 * Math.PI) / 180);
+  context.fillStyle = 'rgba(169, 207, 142, .92)';
+  context.fillRect(-70, -noteHeight / 2 - 18, 140, 34);
+  context.fillStyle = 'rgba(255, 255, 255, .3)';
+  for (let x = -70; x < 70; x += 14) context.fillRect(x, -noteHeight / 2 - 18, 7, 34);
+  context.restore();
   context.textAlign = 'center';
-  context.fillStyle = '#be185d';
-  context.font = '600 30px "Be Vietnam Pro", system-ui, sans-serif';
-  context.fillText(kind === 'intro' ? 'Nhìn lại' : 'Cảm ơn vì đã quan tâm nhau', WIDTH / 2, 300);
-  context.fillStyle = '#4a2535';
-  context.font = '700 58px "Be Vietnam Pro", system-ui, sans-serif';
-  context.fillText(kind === 'intro' ? formatMonth(recap.month) : `${recap.days} ngày`, WIDTH / 2, 380);
-  context.font = '500 26px "Be Vietnam Pro", system-ui, sans-serif';
-  context.fillStyle = '#795563';
+  context.fillStyle = '#3f2a22';
   if (kind === 'intro') {
-    context.fillText(`${recap.days} ngày kể nhau nghe · ${recap.photos.length} tấm ảnh`, WIDTH / 2, 440);
+    context.font = `40px ${HAND}`;
+    context.fillText('Nhìn lại', 0, -60);
+    context.font = `600 44px ${UI}`;
+    context.fillText(formatMonth(recap.month), 0, 10);
+    context.font = `30px ${HAND}`;
+    context.fillStyle = '#6b4b3a';
+    context.fillText(`${recap.days} ngày kể nhau nghe, ${recap.photos.length} tấm ảnh`, 0, 80);
   } else {
+    context.font = `40px ${HAND}`;
+    context.fillText('Cảm ơn vì đã quan tâm nhau', 0, -noteHeight / 2 + 90);
     recap.people.forEach((person, index) => {
-      const y = 470 + index * 92;
-      context.fillStyle = '#4a2535';
-      context.font = '600 28px "Be Vietnam Pro", system-ui, sans-serif';
-      context.fillText(`${person.icon} ${person.name}`, WIDTH / 2, y);
-      context.fillStyle = '#795563';
-      context.font = '500 22px "Be Vietnam Pro", system-ui, sans-serif';
-      context.fillText(`${person.messages} lời kể · ${person.photos} ảnh · ${person.replies} lời nhắn · ${person.reactions} lần thả tim`, WIDTH / 2, y + 36);
+      context.font = `25px ${HAND}`;
+      context.fillStyle = '#5a3d2e';
+      wrapText(context, `${person.icon} ${personLine(person)}.`, noteWidth - 44, 2)
+        .forEach((line, lineIndex) => context.fillText(line, 0, -noteHeight / 2 + 170 + index * 92 + lineIndex * 34));
     });
   }
-  context.globalAlpha = 1;
+  context.restore();
 }
 
 function drawPhoto(context: CanvasRenderingContext2D, image: HTMLImageElement | undefined, photo: RecapPhoto, progress: number, people: Map<string, RecapPerson>) {
@@ -106,11 +166,11 @@ function drawPhoto(context: CanvasRenderingContext2D, image: HTMLImageElement | 
   context.fillRect(0, HEIGHT - 260, WIDTH, 260);
   context.textAlign = 'left';
   context.fillStyle = '#ffffff';
-  context.font = '700 34px "Be Vietnam Pro", system-ui, sans-serif';
+  context.font = `40px ${HAND}`;
   const person = people.get(photo.authorId);
-  context.fillText(`${formatShortDay(photo.date)}${person ? `  ${person.icon}` : ''}`, 36, HEIGHT - 92);
+  context.fillText(`${formatShortDay(photo.date)}${person ? `, ${person.name}` : ''}`, 36, HEIGHT - 92);
   if (photo.caption) {
-    context.font = '500 22px "Be Vietnam Pro", system-ui, sans-serif';
+    context.font = `500 22px ${UI}`;
     context.fillStyle = 'rgba(255, 255, 255, .88)';
     wrapText(context, photo.caption, WIDTH - 72, 1).forEach((line) => context.fillText(line, 36, HEIGHT - 50));
   }
@@ -143,7 +203,8 @@ export function MonthRecap({ month, onClose }: { month: string; onClose: () => v
           image.src = photo.url;
           imagesRef.current.set(photo.id, image);
         }
-        setPlaying(!prefersReducedMotion());
+        // Title frames are written in the handwriting face; draw nothing until it is ready.
+        void document.fonts.load(`40px ${HAND}`).catch(() => undefined).then(() => { if (active) setPlaying(!prefersReducedMotion()); });
       })
       .catch((reason) => { if (active) setError(reason instanceof Error ? reason.message : 'Chưa tải được ảnh của tháng.'); });
     return () => { active = false; };
@@ -250,7 +311,7 @@ export function MonthRecap({ month, onClose }: { month: string; onClose: () => v
   return <div className={`dialog-backdrop recap-backdrop ${closing ? 'closing' : ''}`} onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}>
     <section ref={panelRef} tabIndex={-1} className="recap-dialog" role="dialog" aria-modal="true" aria-labelledby="recap-title">
       <header className="dialog-heading">
-        <div><p className="section-kicker"><Sparkles size={15} /> Một tháng quan tâm nhau</p><h2 id="recap-title">Nhìn lại {formatMonth(month)}</h2></div>
+        <div><h2 id="recap-title">Nhìn lại {formatMonth(month)}</h2><p>{recap ? `${recap.photos.length} tấm ảnh trong ${recap.days} ngày` : 'Đang gom ảnh của tháng…'}</p></div>
         <button className="icon-button" type="button" title="Đóng" aria-label="Đóng video tháng" onClick={close}><X size={18} /></button>
       </header>
       {error ? <p className="error-text" role="alert">{error}</p> : !recap ? <div className="recap-stage recap-loading" role="status">Đang gom ảnh của tháng…</div> : <>
@@ -261,7 +322,7 @@ export function MonthRecap({ month, onClose }: { month: string; onClose: () => v
         <div className="recap-controls">
           <button className="icon-button" type="button" onClick={togglePlay} disabled={exporting} aria-label={playing ? 'Tạm dừng' : 'Phát'} title={playing ? 'Tạm dừng' : 'Phát'}>{playing ? <Pause size={18} /> : <Play size={18} />}</button>
           <button className="icon-button" type="button" onClick={restart} disabled={exporting} aria-label="Xem lại từ đầu" title="Xem lại từ đầu"><RotateCcw size={17} /></button>
-          <span className="recap-counter">{Math.max(0, Math.min(currentPhotoIndex + 1, recap.photos.length))}/{recap.photos.length} ảnh</span>
+          <span className="recap-counter">Ảnh {Math.max(0, Math.min(currentPhotoIndex + 1, recap.photos.length))} trên {recap.photos.length}</span>
           <div className="recap-speed" role="group" aria-label="Thời gian mỗi ảnh">
             {SPEEDS.map((speed) => <button key={speed.ms} type="button" disabled={exporting} aria-pressed={photoMs === speed.ms} onClick={() => changeSpeed(speed.ms)}>{speed.label}</button>)}
           </div>
