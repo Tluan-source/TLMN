@@ -8,6 +8,8 @@
 - `packages/contracts`: kiểu dữ liệu trao đổi giữa frontend/backend.
 - `docs`: hướng dẫn setup, triển khai, backup.
 
+Giao diện là một trang Next.js duy nhất (`apps/web/src/app/page.tsx`), nhưng mỗi tab có URL riêng để refresh, nút back và link chia sẻ mở đúng màn hình: `/` (Hôm nay), `/day/YYYY-MM-DD`, `/memories`, `/memories/YYYY-MM-DD`, `/profile` (`/settings` chuyển về `/profile`). `next.config.ts` rewrite các đường dẫn này về trang chính, `apps/web/src/app/routes.ts` ánh xạ URL ↔ tab. Vercel đọc rewrite/redirect từ `next.config.ts` nên không cần `vercel.json`.
+
 Trình duyệt gửi `/api/*` đến Next.js. Next.js rewrite cùng path sang NestJS để cookie phiên thuộc cùng origin. NestJS xác minh cookie phiên, tìm thành viên workspace rồi mới đọc/ghi dữ liệu Prisma. Frontend không kết nối trực tiếp đến PostgreSQL hoặc Supabase Data API.
 
 ## Cách ly workspace
