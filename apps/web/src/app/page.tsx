@@ -1,6 +1,7 @@
 'use client';
 
 import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { usePathname } from 'next/navigation';
 import { io } from 'socket.io-client';
 import {
   ArrowDown, Bell, Bookmark, CalendarDays, Camera, Check, ChevronLeft, ChevronRight, Heart, House, LockKeyhole,
@@ -10,13 +11,14 @@ import { CHAT_ICONS, MESSAGE_REACTIONS } from '@chuyen/contracts';
 import type { AnniversaryItem, AnniversarySuggestion, CalendarMemory, CommentItem, CoupleWorkspace, DailyStory, Gender, MessageReaction, ReminderItem, StreakStatus, UserProfile } from '@chuyen/contracts';
 import { MemoryBoard } from './memory-board';
 import { MonthRecap } from './month-recap';
+import type { Page } from './routes';
+import { pathForRoute, routeFromPath } from './routes';
 import { shrinkImage } from './shrink-image';
 import type { ViewedPhoto } from './shared';
 import { activeDayInVietnam, api, formatDay, formatMonth, prefersReducedMotion, todayInVietnam, useModal, vietnamDayOf } from './shared';
 
 type Account = UserProfile & { email: string };
 type SummaryState = { summary: string | null; sourceHash?: string; updatedAt?: string; stale?: boolean; canCreate?: boolean };
-type Page = 'home' | 'day' | 'board' | 'calendar' | 'profile';
 const MAX_VIDEO_SECONDS = 7;
 
 function formatReminderTime(value: string, timezone: string) {
@@ -122,6 +124,16 @@ export default function Home() {
   }, []);
   const closePhoto = useCallback(() => setViewedPhoto(null), []);
 
+  // Each tab has its own URL so refresh, the back button and shared links land on the same view.
+  const pathname = usePathname();
+  const navigate = useCallback((nextPage: Page, nextDay?: string) => {
+    const targetDay = nextDay ?? (nextPage === 'home' ? activeDayInVietnam() : dayRef.current);
+    const target = pathForRoute({ page: nextPage, day: targetDay });
+    setPage(nextPage);
+    setDay(targetDay);
+    if (window.location.pathname !== target) window.history.pushState(null, '', target);
+  }, []);
+
   const reloadWorkspace = useCallback(async () => {
     const result = await api<{ couple: CoupleWorkspace | null }>('/couples/me');
     setWorkspace(result.couple);
@@ -189,6 +201,24 @@ export default function Home() {
     void initialize();
     return () => { active = false; };
   }, [notify]);
+
+  useEffect(() => {
+    const syncFromUrl = () => {
+      const route = routeFromPath(window.location.pathname);
+      if (!route) return;
+      // Today's chat lives at "/", so /day/<today> opens it instead of a read-only copy.
+      if (route.page === 'day' && route.day === activeDayInVietnam()) {
+        window.history.replaceState(null, '', '/');
+        return;
+      }
+      setPage(route.page);
+      setDay(route.day ?? activeDayInVietnam());
+    };
+    syncFromUrl();
+    // Back/forward also syncs on popstate, as a safety net for history entries restored after a reload.
+    window.addEventListener('popstate', syncFromUrl);
+    return () => window.removeEventListener('popstate', syncFromUrl);
+  }, [pathname]);
 
   useEffect(() => {
     if (workspace) void loadDay(day);
@@ -401,7 +431,7 @@ export default function Home() {
   const logout = async () => {
     try { await api('/auth/logout', { method: 'POST' }); }
     catch { /* The local page still clears its signed-in state. */ }
-    finally { setAccount(null); setWorkspace(null); setStories([]); setPage('home'); }
+    finally { setAccount(null); setWorkspace(null); setStories([]); navigate('home'); }
   };
 
   const stopVideoRecording = () => {
@@ -578,15 +608,15 @@ export default function Home() {
         <header className="topbar">
           <div className="brand"><span className="brand-mark"><Heart size={21} fill="currentColor" /></span><div><h1>Trò chuyện với nhau sau 1 ngày dài</h1><p>{workspace.name}</p></div></div>
           <div className="topbar-actions">
-            <button className={`profile-avatar-button ${page === 'profile' ? 'active' : ''}`} type="button" onClick={() => setPage('profile')} title="Mở hồ sơ cá nhân" aria-label="Mở hồ sơ cá nhân"><Avatar user={account} /></button>
+            <button className={`profile-avatar-button ${page === 'profile' ? 'active' : ''}`} type="button" onClick={() => navigate('profile')} title="Mở hồ sơ cá nhân" aria-label="Mở hồ sơ cá nhân"><Avatar user={account} /></button>
             <button className="icon-button" onClick={() => void logout()} title="Đăng xuất" aria-label="Đăng xuất"><LogOut size={18} /></button>
           </div>
         </header>
 
         <div className="nav-row">
           <nav className="top-nav" data-active={page === 'home' || page === 'calendar' ? page : page === 'board' ? 'calendar' : 'none'} aria-label="Điều hướng chính">
-            <button className={`nav-button ${page === 'home' ? 'active' : ''}`} type="button" aria-current={page === 'home' ? 'page' : undefined} onClick={() => { setDay(activeDayInVietnam()); setPage('home'); }}><House size={17} /> Hôm nay</button>
-            <button className={`nav-button ${page === 'calendar' || page === 'board' ? 'active' : ''}`} type="button" aria-current={page === 'calendar' ? 'page' : undefined} onClick={() => setPage('calendar')}><CalendarDays size={17} /> Kỷ niệm</button>
+            <button className={`nav-button ${page === 'home' ? 'active' : ''}`} type="button" aria-current={page === 'home' ? 'page' : undefined} onClick={() => navigate('home')}><House size={17} /> Hôm nay</button>
+            <button className={`nav-button ${page === 'calendar' || page === 'board' ? 'active' : ''}`} type="button" aria-current={page === 'calendar' ? 'page' : undefined} onClick={() => navigate('calendar')}><CalendarDays size={17} /> Kỷ niệm</button>
           </nav>
           {/* The streak details live in the heart's label/tooltip so the row stays one line. */}
           <span className="heart-badge nav-heart" role="img" aria-label={streakLabel} title={streakLabel}><StreakHeart progress={streakProgress} /></span>
@@ -595,7 +625,7 @@ export default function Home() {
 
         {(page === 'home' || page === 'day') && <>
 
-        {page === 'day' && <div className="date-row"><h2>{day === activeDayInVietnam() ? 'Hôm nay' : 'Ngày mình cùng nhớ'}</h2><div className="date-controls"><button className="icon-button" type="button" title="Quay lại Kỷ niệm" aria-label="Quay lại Kỷ niệm" onClick={() => setPage('calendar')}><ChevronLeft size={18} /></button><input className="date-picker" type="date" aria-label="Chọn ngày câu chuyện" max={todayInVietnam()} value={day} onChange={(event) => { const nextDay = event.target.value; setDay(nextDay); setPage(nextDay === activeDayInVietnam() ? 'home' : 'day'); }} /></div></div>}
+        {page === 'day' && <div className="date-row"><h2>{day === activeDayInVietnam() ? 'Hôm nay' : 'Ngày mình cùng nhớ'}</h2><div className="date-controls"><button className="icon-button" type="button" title="Quay lại Kỷ niệm" aria-label="Quay lại Kỷ niệm" onClick={() => navigate('calendar')}><ChevronLeft size={18} /></button><input className="date-picker" type="date" aria-label="Chọn ngày câu chuyện" max={todayInVietnam()} value={day} onChange={(event) => { const nextDay = event.target.value; if (nextDay) navigate(nextDay === activeDayInVietnam() ? 'home' : 'day', nextDay); }} /></div></div>}
         </>}
 
       {(page === 'home' || page === 'day') && <>
@@ -659,7 +689,7 @@ export default function Home() {
               <header className="memory-month-heading"><h3>{formatMonth(month)}<span>Sự quan tâm đã kéo dài {memories.length} ngày</span></h3>{memories.some((memory) => memory.coverUrl) && <button className="button button-soft recap-button" type="button" onClick={() => setRecapMonth(month)}><Play size={14} fill="currentColor" /> Xem lại tháng</button>}</header>
               <div className="memory-weeks" aria-label={`Các tuần của ${formatMonth(month)}`}>
                 {weeks.map((week, weekIndex) => <div className="memory-week" key={`${month}-week-${weekIndex}`}>
-                  {week.map((date, weekdayIndex) => date ? <MemoryTile key={date} date={date} memory={memoriesByDate.get(date) || null} anniversaries={anniversariesByDate.get(date) || []} onOpen={() => { setDay(date); setPage('board'); window.scrollTo({ top: 0, behavior: 'smooth' }); }} /> : <span className="memory-week-empty" key={`${month}-empty-${weekIndex}-${weekdayIndex}`} aria-hidden="true" />)}
+                  {week.map((date, weekdayIndex) => date ? <MemoryTile key={date} date={date} memory={memoriesByDate.get(date) || null} anniversaries={anniversariesByDate.get(date) || []} onOpen={() => { navigate('board', date); window.scrollTo({ top: 0, behavior: 'smooth' }); }} /> : <span className="memory-week-empty" key={`${month}-empty-${weekIndex}-${weekdayIndex}`} aria-hidden="true" />)}
                 </div>)}
               </div>
             </section>;
@@ -667,7 +697,7 @@ export default function Home() {
         </div>}
       </section>}
 
-      {page === 'board' && <MemoryBoard day={day} stories={stories} ready={dayReady} anniversaries={anniversariesByDate.get(day) || []} onBack={() => setPage('calendar')} onOpenChat={() => setPage(day === activeDayInVietnam() ? 'home' : 'day')} onViewPhoto={setViewedPhoto} />}
+      {page === 'board' && <MemoryBoard day={day} stories={stories} ready={dayReady} anniversaries={anniversariesByDate.get(day) || []} onBack={() => navigate('calendar')} onOpenChat={() => navigate(day === activeDayInVietnam() ? 'home' : 'day', day)} onViewPhoto={setViewedPhoto} />}
 
       {page === 'profile' && <ProfilePage account={account} workspace={workspace} partner={partner} busy={busy} inviteUrl={inviteUrl} reminderRevision={reminderRevision} onInvite={createInvitation} notify={notify} onAccount={setAccount} onWorkspace={reloadWorkspace} />}
 
