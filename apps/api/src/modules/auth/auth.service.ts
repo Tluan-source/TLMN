@@ -3,6 +3,8 @@ import { PrismaService } from '../../shared/prisma.service';
 import { createToken, hashPassword, hashToken, verifyPassword } from '../../shared/security';
 import { CredentialsDto, RegisterDto } from './auth.dto';
 
+const VISIT_GAP_MS = 30 * 60 * 1000;
+
 export type ClientInfo = { ip?: string; userAgent?: string };
 
 @Injectable()
@@ -31,6 +33,13 @@ export class AuthService {
     return { user, token: await this.createSession(user.id) };
   }
 
+  // Opening the app with a saved session never hits login, so record it as a VISIT at most once per gap.
+  async recordVisit(user: { id: string; email: string }, client: ClientInfo = {}) {
+    const since = new Date(Date.now() - VISIT_GAP_MS);
+    const recent = await this.prisma.loginLog.findFirst({ where: { userId: user.id, createdAt: { gte: since } }, select: { id: true } });
+    if (!recent) await this.logLogin('VISIT', user.email, user.id, client);
+  }
+
   async logout(token?: string) {
     if (token) await this.prisma.session.deleteMany({ where: { tokenHash: hashToken(token) } });
   }
@@ -43,7 +52,7 @@ export class AuthService {
     return { ok: true };
   }
 
-  private async logLogin(event: 'REGISTER' | 'LOGIN' | 'LOGIN_FAILED', email: string, userId: string | undefined, client: ClientInfo) {
+  private async logLogin(event: 'REGISTER' | 'LOGIN' | 'LOGIN_FAILED' | 'VISIT', email: string, userId: string | undefined, client: ClientInfo) {
     await this.prisma.loginLog.create({
       data: { event, email: email.slice(0, 320), userId, ip: client.ip?.slice(0, 64), userAgent: client.userAgent?.slice(0, 512) },
     });

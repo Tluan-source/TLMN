@@ -46,7 +46,8 @@ export class AuthController {
 
   @UseGuards(AuthGuard)
   @Get('me')
-  me(@Req() request: Request) {
+  async me(@Req() request: Request) {
+    await this.auth.recordVisit(request.user!, clientInfo(request));
     return this.publicUser(request.user!);
   }
 
