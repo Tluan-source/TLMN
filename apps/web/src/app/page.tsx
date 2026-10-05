@@ -13,36 +13,13 @@ import { MemoryBoard } from './memory-board';
 import { MonthRecap } from './month-recap';
 import type { Page } from './routes';
 import { pathForRoute, routeFromPath } from './routes';
+import { shrinkImage } from './shrink-image';
 import type { ViewedPhoto } from './shared';
 import { activeDayInVietnam, api, formatDay, formatMonth, prefersReducedMotion, todayInVietnam, useModal, vietnamDayOf } from './shared';
 
 type Account = UserProfile & { email: string };
 type SummaryState = { summary: string | null; sourceHash?: string; updatedAt?: string; stale?: boolean; canCreate?: boolean };
 const MAX_VIDEO_SECONDS = 7;
-
-// Phone camera photos are often 3–10 MB; shrink them before upload so sending stays fast on mobile data.
-async function shrinkImage(file: File, maxSide = 2048, quality = 0.85): Promise<File> {
-  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size <= 1024 * 1024) return file;
-  const url = URL.createObjectURL(file);
-  try {
-    // Decode through <img> so the camera's EXIF rotation is applied; createImageBitmap ignores it on some phones.
-    const image = new Image();
-    image.src = url;
-    await image.decode();
-    const scale = Math.min(1, maxSide / Math.max(image.naturalWidth, image.naturalHeight));
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.round(image.naturalWidth * scale);
-    canvas.height = Math.round(image.naturalHeight * scale);
-    canvas.getContext('2d')?.drawImage(image, 0, 0, canvas.width, canvas.height);
-    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', quality));
-    if (!blob || blob.size >= file.size) return file;
-    return new File([blob], file.name.replace(/\.\w+$/, '') + '.jpg', { type: 'image/jpeg' });
-  } catch {
-    return file;
-  } finally {
-    URL.revokeObjectURL(url);
-  }
-}
 
 function formatReminderTime(value: string, timezone: string) {
   return new Intl.DateTimeFormat('vi-VN', { timeZone: timezone, weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(value));
