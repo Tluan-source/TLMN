@@ -4,11 +4,13 @@
   "private": true,
   "scripts": {
     "start:dev": "node start-with-system-ca.cjs dev",
-    "build": "nest build",
+    "build": "prisma generate && nest build",
     "start:prod": "node start-with-system-ca.cjs prod",
+    "start:render": "prisma migrate deploy && node start-with-system-ca.cjs prod",
     "db:seed:demo": "node prisma/seed-demo.cjs",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
     "db:studio": "prisma studio"
   },
   "dependencies": {
