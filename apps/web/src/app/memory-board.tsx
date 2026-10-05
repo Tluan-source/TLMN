@@ -110,6 +110,25 @@ function ropePath(points: { x: number; y: number }[]) {
   return path;
 }
 
+/** A small wooden spring clothespin, the kind that hangs photos on twine. */
+function Clothespin() {
+  return <svg className="board-clip" width="18" height="50" viewBox="0 0 18 50" aria-hidden="true">
+    <defs>
+      <linearGradient id="clothespin-wood" x1="0" x2="1">
+        <stop offset="0" stopColor="#c8975e" />
+        <stop offset=".45" stopColor="#ecc896" />
+        <stop offset="1" stopColor="#c08a50" />
+      </linearGradient>
+    </defs>
+    <path d="M2 1h6.4l.4 48H3.2Z" fill="url(#clothespin-wood)" stroke="#a87442" strokeWidth=".8" />
+    <path d="M9.6 1H16l-1.2 48H9.2Z" fill="url(#clothespin-wood)" stroke="#a87442" strokeWidth=".8" />
+    <path d="M3 17.5h12" stroke="#9a6a3a" strokeWidth=".8" opacity=".6" />
+    <rect x="1.6" y="18.2" width="14.8" height="4.4" rx="1.4" fill="#c7ccd1" stroke="#878d93" strokeWidth=".6" />
+    <path d="M2.6 19.2h12.6" stroke="#f2f4f6" strokeWidth=".7" />
+    <circle cx="15.6" cy="20.4" r="2.5" fill="none" stroke="#878d93" strokeWidth="1.1" />
+  </svg>;
+}
+
 export function MemoryBoard({ day, stories, ready, anniversaries, onBack, onOpenChat, onViewPhoto }: {
   day: string; stories: DailyStory[]; ready: boolean; anniversaries: AnniversaryItem[];
   onBack: () => void; onOpenChat: () => void; onViewPhoto: (photo: ViewedPhoto) => void;
@@ -127,9 +146,10 @@ export function MemoryBoard({ day, stories, ready, anniversaries, onBack, onOpen
     const overallSag = Math.min(64, width * 0.045);
     return columns.flatMap((column, index) => {
       if (!column.photo) return [];
-      const x = SIDE + index * SLOT + SLOT / 2;
+      // Clipped on by hand: never exactly centred in its column, never at quite the same height.
+      const x = Math.round(SIDE + index * SLOT + SLOT / 2 + (seeded(column.key, 5) - 0.5) * 30);
       const along = x / width;
-      return [{ key: column.key, x, y: Math.round(STRING_ANCHOR_Y + 22 + overallSag * 4 * along * (1 - along) + seeded(column.key) * 12) }];
+      return [{ key: column.key, x, y: Math.round(STRING_ANCHOR_Y + 22 + overallSag * 4 * along * (1 - along) + seeded(column.key) * 20) }];
     });
   }, [columns, width]);
   const pinByKey = useMemo(() => new Map(pins.map((pin) => [pin.key, pin])), [pins]);
@@ -213,20 +233,33 @@ export function MemoryBoard({ day, stories, ready, anniversaries, onBack, onOpen
           : columns.length === 0 ? <div className="board-empty"><span className="board-note note-pink"><span className="board-pin" aria-hidden="true" />Ngày này còn trống.<small>Mở cuộc trò chuyện để kể một điều, nó sẽ được ghim ở đây.</small></span></div>
           : <div className="board-track" style={{ width }}>
             <svg className="board-string" width={width} height="260" viewBox={`0 0 ${width} 260`} aria-hidden="true">
+              <defs>
+                {/* Roughens the edges so the cord reads as hairy jute twine rather than a clean line. */}
+                <filter id="jute-fibres" x="-2%" y="-50%" width="104%" height="200%">
+                  <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="4" />
+                  <feDisplacementMap in="SourceGraphic" scale="1.6" />
+                </filter>
+              </defs>
               <path d={path} className="rope-shadow" />
-              <path d={path} className="rope-edge" />
-              <path d={path} className="rope-core" />
-              <path d={path} className="rope-twist" />
+              <g filter="url(#jute-fibres)">
+                <path d={path} className="rope-edge" />
+                <path d={path} className="rope-core" />
+                <path d={path} className="rope-twist" />
+                <path d={path} className="rope-fuzz" />
+              </g>
               <circle className="rope-nail" cx="10" cy={STRING_ANCHOR_Y} r="5" />
               <circle className="rope-nail" cx={width - 10} cy={STRING_ANCHOR_Y} r="5" />
             </svg>
             {columns.map((column, index) => {
               const pin = pinByKey.get(column.key);
-              const tilt = (seeded(column.key, 7) - 0.5) * 16;
+              const tilt = (seeded(column.key, 7) - 0.5) * 13;
+              // Photos are not all trimmed the same, and each sits where its clip landed.
+              const photoWidth = Math.round(120 + seeded(column.key, 13) * 20);
+              const columnCentre = SIDE + index * SLOT + SLOT / 2;
               return <div className="board-column" key={column.key} style={{ width: SLOT }}>
                 <div className="board-hanger">
-                  {column.photo && pin && <figure className="board-photo" style={{ top: pin.y, transform: `rotate(${tilt.toFixed(1)}deg)`, animationDelay: `${Math.min(index, 12) * 60}ms` }}>
-                    <span className="board-clip" aria-hidden="true" />
+                  {column.photo && pin && <figure className="board-photo" style={{ top: pin.y + 14, left: `calc(50% + ${pin.x - columnCentre}px)`, width: photoWidth, marginLeft: -photoWidth / 2, transform: `rotate(${tilt.toFixed(1)}deg)`, animationDelay: `${Math.min(index, 12) * 60}ms` }}>
+                    <Clothespin />
                     {column.photo.isVideo
                       ? <video src={column.photo.url} muted playsInline loop preload="metadata" controls aria-label={`Video của ${authorLabel(column.photo.author)}`} />
                       : <button type="button" className="board-photo-open" aria-label={`Mở ảnh của ${authorLabel(column.photo.author)} lúc ${column.photo.time}`} onClick={() => onViewPhoto({ url: column.photo!.url, alt: `Ảnh của ${authorLabel(column.photo!.author)}` })}><img src={column.photo.url} alt="" loading="lazy" draggable={false} /></button>}
