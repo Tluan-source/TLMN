@@ -52,3 +52,15 @@ Mỗi tài khoản chỉ tham gia một workspace trong bản đầu. Chủ work
 ## Môi trường production
 
 Frontend dùng Vercel, backend dùng Render và PostgreSQL/Supabase Storage dùng project production riêng. Next.js chuyển tiếp `/api` đến backend để cookie phiên cùng origin. Khi frontend và backend có hostname khác nhau, đặt `NEXT_PUBLIC_BACKEND_URL` ở frontend thành URL công khai của backend để mở WebSocket trực tiếp, và đặt `APP_ORIGIN` ở backend thành origin frontend được phép. Không lưu ảnh trên ổ đĩa Render. Thiết lập backup SQL và ảnh, gửi email xác minh/khôi phục mật khẩu, tên miền và giới hạn chi phí LLM trước khi đưa dữ liệu thật vào ứng dụng.
+
+## Deploy backend lên Render
+
+Build không cần kết nối database; migration chạy lúc khởi động service. Cấu hình Web Service (Root Directory để trống, tức thư mục gốc repo):
+
+| Mục | Giá trị |
+|---|---|
+| Build Command | `npm ci --include=dev && npm run build -w @chuyen/api` |
+| Start Command | `npm run start:render -w @chuyen/api` |
+| Health Check Path | `/api/health` |
+
+`DATABASE_URL` dùng chuỗi **Session pooler** (cổng `5432`) copy nguyên từ nút **Connect** của Supabase, thêm `?sslmode=require` nếu chưa có. Không dùng Transaction pooler (cổng `6543`) cho migration.
